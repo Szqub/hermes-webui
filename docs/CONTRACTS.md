@@ -98,6 +98,16 @@ contributor guidance; it does not change runtime behavior or CI gates.
   empty-allowlist-is-not-configured rule, and the probe-failure fallback.
   Start here before changing custom-provider model filtering or
   discovery-vs-allowlist semantics (#7165, #7404).
+- [`docs/architecture/custom-lane-endpoint-authority.md`](architecture/custom-lane-endpoint-authority.md):
+  current contract for the plain `custom` lane in
+  `resolve_model_provider()`: why a model id's own colons are never provider
+  syntax there, the endpoint-authoritative rule that keeps `model.base_url`
+  the owner of endpoint and credential authority, the typed-membership
+  disjointness rules against the generic `@<provider_id>:<model>` namespace,
+  and the evaluation order against the endpoint-slug and named-provider
+  branches. Start here before changing the provider-hint parser, the
+  `@custom:<model>` wire shape, or the `custom_providers[]` / `providers:`
+  ownership scans (#7955).
 - [`docs/architecture/profile-home-resolve-cache.md`](architecture/profile-home-resolve-cache.md):
   current contract for the call-scoped memoization around
   `_resolve_profile_home_param()` in `api/workspace.py`: what it caches, the

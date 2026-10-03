@@ -2864,11 +2864,13 @@ def resolve_model_provider(model_id: str, *, explicitly_picked: bool = False) ->
     """
     config_provider = None
     config_base_url = None
+    config_provider_raw = None
     model_cfg = cfg.get("model", {})
     if isinstance(model_cfg, dict):
         config_base_url = model_cfg.get("base_url")
+        config_provider_raw = model_cfg.get("provider")
         config_provider = _resolve_configured_provider_id(
-            model_cfg.get("provider"),
+            config_provider_raw,
             cfg,
             base_url=config_base_url,
             resolve_alias=False,
@@ -3106,6 +3108,88 @@ def resolve_model_provider(model_id: str, *, explicitly_picked: bool = False) ->
             and provider_hint.lower() in _custom_endpoint_slugs_for_base_url(config_base_url)
         ):
             return _finalize(bare_model, config_provider, config_base_url)
+        # Endpoint-authoritative plain Custom lane (#7955). The model picker
+        # collapses the session provider to the bare ``custom`` lane for models
+        # served by the configured endpoint (``model.base_url``), and
+        # ``model_with_provider_context()`` then mints ``@custom:<model>``.
+        # When the model id itself carries a colon (Ollama/vLLM tags such as
+        # ``qwen3.8:27b``), the generic ``@provider:model`` grammar misreads
+        # the tag prefix as a named-provider slug (``custom:qwen3.8``) and the
+        # runtime fails with ``custom:<tag-prefix> not configured``.
+        #
+        # When the configured lane IS the custom endpoint (bare ``custom`` or
+        # a local-server provider such as ``ollama``/``vllm``/legacy ``local``
+        # with ``model.base_url`` set), the payload after ``@custom:`` is the
+        # model id, so return it whole with provider ``custom`` and
+        # ``model.base_url`` — without running the ``custom_providers[]``
+        # ownership scan or consulting same-named ``providers:`` records
+        # (e.g. ``providers.ollama.base_url``), which the Custom lane never
+        # used. Endpoint and credential authority stay with the same owner:
+        # the configured endpoint.
+        #
+        # The lane is judged from the RAW ``model.provider`` spelling, not
+        # the named-slug-resolved provider id: when the active provider is
+        # itself a named ``custom:<slug>``, a ``@custom:<other-slug>:<model>``
+        # token is an explicit named-provider reference, and an unknown slug
+        # there must keep failing closed (base_url=None, #4728) rather than
+        # being rerouted to the active endpoint with a mangled model id.
+        # Legacy ``local`` heals to ``custom`` for the lane check exactly as
+        # it does for the resolver itself (#1384).
+        #
+        # Disjointness is enforced by typed config-membership signals, not by
+        # spelling, and the membership test reads the TOKEN, not the parsed
+        # hint: ``_parse_provider_qualified_model_id()`` shortens
+        # ``custom:<a>:<b>`` to provider ``custom:<a>`` while splitting, so a
+        # configured key that the token names (e.g. ``custom:a:b``) would slip
+        # past a check made on ``provider_hint``. This lane only fires when no
+        # configured record owns the token at all — no ``providers:`` key it
+        # names, no unique named ``custom_providers[]`` entry, and not an
+        # endpoint-derived ``custom:<host>:<port>`` slug (the branch above) —
+        # and it never fires for a hint that does not start with ``custom``, so
+        # every token the generic ``providers:`` namespace can emit —
+        # ``@ollama:...``, ``@custom-configured:...``, any user-named slug —
+        # keeps its existing resolution.
+        _lane_base_url = str(config_base_url or "").strip()
+        _lane_provider = str(config_provider_raw or "").strip().lower()
+        if _lane_provider == "local":
+            _lane_provider = "custom"
+        _custom_endpoint_lane = bool(_lane_base_url) and (
+            not _lane_provider
+            or _lane_provider == "custom"
+            or _is_local_server_provider(_lane_provider)
+        )
+        if _custom_endpoint_lane:
+            _providers_cfg_lane = _get_providers_cfg()
+            _raw_route = str(model_id or "").strip().lstrip("@")
+            _named_record_owns_route = any(
+                _raw_route.startswith(f"{key}:")
+                for key in _providers_cfg_lane
+                # The plain ``custom`` name is the lane's own, handled by the
+                # explicit membership test below; only records that name a
+                # longer route (``custom:<a>:<b>``, ``custom-configured``, ...)
+                # own the token.
+                if isinstance(key, str) and key and key != "custom"
+            ) or any(
+                _raw_route.startswith(f"custom:{slug}:")
+                for slug in _named_custom_provider_slugs(cfg)
+            )
+            if not _named_record_owns_route:
+                if provider_hint == "custom" and "custom" not in _providers_cfg_lane:
+                    return _finalize(bare_model, "custom", _lane_base_url)
+                if (
+                    provider_hint.startswith("custom:")
+                    and not _custom_slug_rest_looks_like_host_port(
+                        provider_hint[len("custom:"):]
+                    )
+                    and provider_hint not in _providers_cfg_lane
+                    and _unique_custom_provider_entry(
+                        cfg.get('custom_providers', []),
+                        _custom_provider_slug_key(provider_hint),
+                    ) is None
+                ):
+                    return _finalize(
+                        model_id[len("@custom:"):], "custom", _lane_base_url,
+                    )
         # _get_provider_base_url() only reads `providers:` and the ACTIVE
         # `model.base_url`, so a named custom provider registered solely in
         # `custom_providers:` resolved to None there. Prefer that entry's own
