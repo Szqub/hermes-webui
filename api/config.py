@@ -4846,8 +4846,10 @@ def model_with_provider_context(model_id: str, model_provider: str | None = None
 
     model_cfg = cfg.get("model", {})
     config_provider = None
+    model_base_url = None
     if isinstance(model_cfg, dict):
         config_provider = str(model_cfg.get("provider") or "").strip().lower()
+        model_base_url = str(model_cfg.get("base_url") or "").strip()
 
     # ACP subprocess providers always need the explicit hint — their slash IDs
     # are not OpenRouter paths and must not inherit config_provider routing.
@@ -4873,6 +4875,49 @@ def model_with_provider_context(model_id: str, model_provider: str | None = None
     # model bare preserves provider-specific base_url/proxy settings.
     if provider == config_provider:
         return model
+
+    # `custom` — and its legacy `local` alias — without a slug is the generic
+    # OpenAI-compatible pseudo-provider the picker falls back to when the active
+    # provider is a local/OpenAI-compatible server, or when the config names no
+    # provider but sets a base_url (``_resolve_configured_provider_id`` plus the
+    # Custom-group fallback). The session then stores the collapsed slug while
+    # ``model.provider`` still holds the raw name, so the raw-string equality
+    # above misses the pair and a model id without a slash is minted into a
+    # synthetic ``@custom:<model>`` hint.
+    #
+    # For a colon-bearing id that hint is lossy: ``_parse_provider_qualified_model_id``
+    # reads the model's own first colon token as a NAME custom-provider slug, so
+    # ``@custom:qwen3.8:27b`` resolves to provider ``custom:qwen3.8`` / model
+    # ``27b`` — a slug no ``custom_providers[]`` entry owns, surfacing as an
+    # unconfigured custom provider (#7955). Both sides name the same endpoint
+    # here, so keep the model bare and let the configured provider (or its
+    # base_url) route it. A named ``custom:<slug>`` IS a real route and keeps its
+    # explicit hint.
+    #
+    # Only when the same endpoint is named, though: ``providers.custom`` /
+    # ``providers.local`` with their own ``base_url`` is a route of its own, and
+    # returning a bare id there would drop the session's choice and send the
+    # request to the configured default provider instead. Both slugs are checked
+    # because they are the same pseudo-provider under two names, and only the
+    # explicit ``providers`` entry counts — the ``model.base_url`` fallback of
+    # ``_get_provider_base_url`` fires whenever ``model.provider`` equals the
+    # slug, which IS the same-endpoint case this rule is about.
+    # Inside the guard, so no other provider pays for it, and through
+    # ``_get_provider_cfg`` so a non-dict ``providers.<slug>`` cannot turn an
+    # unrelated route into an AttributeError.
+    if provider in ("custom", "local") and not any(
+        str((_get_provider_cfg(slug) or {}).get("base_url") or "").strip()
+        for slug in ("custom", "local")
+    ):
+        if (
+            _resolve_provider_alias(config_provider) == "custom"
+            or _is_local_server_provider(config_provider)
+        ):
+            return model
+        # The config declares no provider at all and carries the endpoint on the
+        # model block; a bare id is then the only routing signal available.
+        if not config_provider and model_base_url:
+            return model
 
     # OpenRouter selections with slash IDs are explicit provider/model paths.
     if provider == "openrouter":

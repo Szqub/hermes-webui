@@ -98,6 +98,14 @@ contributor guidance; it does not change runtime behavior or CI gates.
   empty-allowlist-is-not-configured rule, and the probe-failure fallback.
   Start here before changing custom-provider model filtering or
   discovery-vs-allowlist semantics (#7165, #7404).
+- [`docs/architecture/provider-context-model-encoding.md`](architecture/provider-context-model-encoding.md):
+  current contract for the `model_with_provider_context()` ->
+  `resolve_model_provider()` encoding boundary: the `@provider:model` grammar,
+  the rules in evaluation order (ACP/plugin/Codex hints, configured-provider and
+  bare-`custom` passthroughs), and the round-trip invariant that keeps
+  colon-bearing model ids intact. Start here before changing how a session's
+  provider is folded into a request model id, or before editing
+  `_parse_provider_qualified_model_id()` (#7955).
 - [`docs/architecture/profile-home-resolve-cache.md`](architecture/profile-home-resolve-cache.md):
   current contract for the call-scoped memoization around
   `_resolve_profile_home_param()` in `api/workspace.py`: what it caches, the
