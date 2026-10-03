@@ -7036,7 +7036,8 @@ def _model_matches_active_provider_family(
 def _catalog_model_id_matches(candidate: str, model: str) -> bool:
     candidate = str(candidate or "").strip()
     if candidate.startswith("@") and ":" in candidate:
-        candidate = candidate.rsplit(":", 1)[1]
+        parsed = _parse_provider_qualified_model_id(candidate)
+        candidate = parsed[0] if parsed else candidate
     if "/" in candidate:
         candidate = candidate.split("/", 1)[1]
     return candidate.replace("-", ".").lower() == model.replace("-", ".").lower()
@@ -7050,7 +7051,10 @@ def _catalog_group_owns_exact_model(group: dict, model: str) -> bool:
             if not isinstance(entry, dict):
                 continue
             candidate = str(entry.get("id") or "").strip()
-            if candidate.lower().startswith(wrapper.lower()):
+            parsed = _parse_provider_qualified_model_id(candidate)
+            if parsed and parsed[1].lower() == provider_id.lower():
+                candidate = parsed[0]
+            elif candidate.lower().startswith(wrapper.lower()):
                 candidate = candidate[len(wrapper):]
             if candidate == model or _catalog_model_id_matches(candidate, model):
                 return True
@@ -7915,15 +7919,21 @@ def _resolve_compatible_session_model_state(
     requested_provider = _clean_session_model_provider(model_provider)
     if model and requested_provider == "moa":
         return _moa_fast_path_model_state(model)
-    if model and requested_provider and model.startswith(f"@{requested_provider}:"):
+    if model.startswith("@!:"):
+        return model, "custom", False
+    qualified = _parse_provider_qualified_model_id(model)
+    if model and requested_provider and qualified and qualified[1] == requested_provider:
         try:
             from api.config import cfg as _active_cfg
 
             providers_cfg = _active_cfg.get("providers") if isinstance(_active_cfg, dict) else {}
         except Exception:
             providers_cfg = {}
-        if isinstance(providers_cfg, dict) and requested_provider in providers_cfg:
-            return model, requested_provider, False
+        if isinstance(providers_cfg, dict):
+            from api.config import _canonicalise_provider_id
+            configured_ids = {_canonicalise_provider_id(key) for key in providers_cfg}
+            if _canonicalise_provider_id(requested_provider) in configured_ids:
+                return model, requested_provider, False
     if model and requested_provider:
         # Only safe when the model itself does not carry an ``@provider:model``
         # qualifier — qualified strings require the catalog to decide whether

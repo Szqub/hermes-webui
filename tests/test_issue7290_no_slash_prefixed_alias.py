@@ -55,7 +55,9 @@ def _build_badges(active_provider, default_model, groups, fallback_providers=Non
     end = src.index("            return badges", start) + len("            return badges")
     fn_src = textwrap.dedent(src[start:end])
 
+    from api.config import _encode_provider_qualified_model_id
     scope = {
+        "_encode_provider_qualified_model_id": _encode_provider_qualified_model_id,
         "active_provider": active_provider,
         "default_model": default_model,
         "cfg": {"fallback_providers": fallback_providers or []},
@@ -241,13 +243,9 @@ def test_raw_candidates_only_holds_bare_and_at_prefix() -> None:
     assert matches, "raw_candidates tuple not found in api/config.py"
     for m in matches:
         body = m.group(1)
-        # The body may be a single line `model, f"@{provider}:{model}"` or
-        # a multi-line stack; both are accepted. We only need to verify the
-        # two safe entries are present and the synthesised one is gone.
+        # Both builders use the shared escaping encoder, never a slash alias.
         bare = re.search(r"\bmodel\b", body)
-        at_prefixed = re.search(
-            r'f["\']@\{provider\}:\{model\}["\']', body
-        )
+        at_prefixed = "_encode_provider_qualified_model_id(model, provider)" in body
         assert bare, f"raw_candidates missing the bare `model` entry: {body!r}"
         assert at_prefixed, (
             f"raw_candidates missing the @-prefixed entry, or contains a "

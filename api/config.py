@@ -2113,7 +2113,7 @@ def _seed_provider_models_from_core() -> None:
                 continue
             normed = mid.strip().replace("-", ".").lower()
             if normed not in existing_ids:
-                inject_id = (_prefix + mid.strip()) if _prefix else mid.strip()
+                inject_id = _encode_catalog_route(mid.strip(), webui_key) if _prefix else mid.strip()
                 webui_list.append({
                     "id": inject_id,
                     "label": _get_label_for_model(mid.strip(), []),
@@ -2328,9 +2328,8 @@ def _build_nous_featured_set(
 
 def _strip_picker_provider_hint(model_id: str) -> str:
     mid = str(model_id or "").strip()
-    if mid.startswith("@") and ":" in mid:
-        return mid[mid.index(":") + 1 :]
-    return mid
+    parsed = _parse_provider_qualified_model_id(mid)
+    return parsed[0] if parsed else mid
 
 
 def _model_matches_picker_selection(
@@ -2350,12 +2349,10 @@ def _model_matches_picker_selection(
     if selected_bare != candidate_bare:
         return False
 
-    selected_provider = ""
-    if selected.startswith("@") and ":" in selected:
-        selected_provider = selected[1 : selected.index(":")].lower()
-    candidate_provider = str(provider_id or "").strip().lower()
-    if candidate.startswith("@") and ":" in candidate:
-        candidate_provider = candidate[1 : candidate.index(":")].lower()
+    selected_route = _parse_provider_qualified_model_id(selected)
+    selected_provider = selected_route[1].lower() if selected_route else ""
+    candidate_route = _parse_provider_qualified_model_id(candidate)
+    candidate_provider = (candidate_route[1] if candidate_route else str(provider_id or "")).strip().lower()
 
     return not selected_provider or not candidate_provider or selected_provider == candidate_provider
 
@@ -2434,7 +2431,7 @@ def _apply_provider_prefix(
         if mid.startswith("@") or "/" in mid:
             result.append(entry)
         else:
-            entry["id"] = f"@{provider_id}:{mid}"
+            entry["id"] = _encode_catalog_route(mid, provider_id)
             result.append(entry)
     return result
 
@@ -2500,7 +2497,7 @@ def _deduplicate_model_ids(groups: list[dict]) -> None:
             group = groups[gi]
             model = group[bucket_name][mi]
             pid = group.get("provider_id", "")
-            model["id"] = f"@{pid}:{original_id}"
+            model["id"] = _encode_catalog_route(original_id, pid)
             provider_name = group.get("provider", pid)
             if model.get("label") != original_id:
                 model["label"] = f"{model['label']} ({provider_name})"
@@ -2690,6 +2687,49 @@ def _custom_slug_rest_looks_like_host_port(rest: str) -> bool:
     return False
 
 
+def _encode_provider_qualified_model_id(model_id: str, provider_id: object) -> str:
+    """Encode a generic route without entering the reserved ``@!:`` lane."""
+    import re
+    from urllib.parse import quote
+
+    provider = str(provider_id or "").strip().lower()
+    if not provider:
+        return model_id
+    safe = re.fullmatch(r"[a-z0-9_.~-]+|custom:[a-z0-9_.~-]+", provider)
+    endpoint = bool(re.fullmatch(r"custom:[a-z0-9_.~-]+:[0-9]+", provider)) and _custom_slug_rest_looks_like_host_port(provider[7:])
+    token = provider if safe or endpoint else quote(provider, safe="~()*'")
+    return f"@{token}:{model_id}"
+
+
+def _configured_custom_lane_is_reserved() -> bool:
+    """Is the active configuration a configurable Custom endpoint that owns a
+    reserved ``@!:`` lane? Mirrors the session encoder's condition and the
+    resolver's fail-closed guard, so a catalog option can never advertise a
+    route the resolver would reject."""
+    active_cfg = cfg if isinstance(cfg, dict) else {}
+    model_cfg = active_cfg.get("model")
+    if not isinstance(model_cfg, dict):
+        return False
+    active = str(model_cfg.get("provider") or "").strip().lower()
+    base = str(model_cfg.get("base_url") or "").strip()
+    if not base or active.startswith("custom:"):
+        return False
+    return active == "local" or _is_local_server_provider(active)
+
+
+def _encode_catalog_route(model_id: str, provider_id: object) -> str:
+    """Route for a picker/catalog option.
+
+    The configured Custom lane must not be advertised as ``@custom:<model>``:
+    that spelling is also the named-record form, so a colon-bearing identifier
+    would be read back as a record reference and the picker would send a
+    truncated id to a different endpoint (#7955). Every other provider keeps the
+    generic escaped route."""
+    if _canonicalise_provider_id(provider_id) == "custom" and _configured_custom_lane_is_reserved():
+        return f"@!:{model_id}"
+    return _encode_provider_qualified_model_id(model_id, provider_id)
+
+
 def _parse_provider_qualified_model_id(model_id: str) -> tuple[str, str] | None:
     """Parse WebUI's ``@provider:model`` route hint into ``(model, provider)``.
 
@@ -2702,15 +2742,22 @@ def _parse_provider_qualified_model_id(model_id: str) -> tuple[str, str] | None:
     if not candidate.startswith("@") or ":" not in candidate:
         return None
     inner = candidate[1:]
+    if candidate.startswith("@!:"):
+        return candidate[3:], "custom"
+    token, suffix = inner.split(":", 1)
+    if "%" in token:
+        from urllib.parse import unquote
+        return suffix, unquote(token).strip().lower()
+    if token == "custom":
+        parts = suffix.split(":")
+        if len(parts) >= 3 and _custom_slug_rest_looks_like_host_port(":".join(parts[:2])):
+            return ":".join(parts[2:]), "custom:" + ":".join(parts[:2])
+        if len(parts) >= 2:
+            return ":".join(parts[1:]), "custom:" + parts[0]
+        return suffix, "custom"
     provider_hint, bare_model = inner.rsplit(":", 1)
-    if provider_hint.startswith("custom:") and provider_hint.count(":") >= 2:
-        _slug_rest = provider_hint[len("custom:"):]
-        if not _custom_slug_rest_looks_like_host_port(_slug_rest):
-            provider_hint, extra = provider_hint.rsplit(":", 1)
-            bare_model = f"{extra}:{bare_model}"
-    elif (provider_hint not in _PROVIDER_MODELS
-            and provider_hint not in _PROVIDER_DISPLAY
-            and not provider_hint.startswith("custom:")):
+    if (provider_hint not in _PROVIDER_MODELS
+            and provider_hint not in _PROVIDER_DISPLAY):
         provider_hint, bare_model = inner.split(":", 1)
     return bare_model, provider_hint
 
@@ -2748,7 +2795,12 @@ def _get_providers_cfg() -> dict:
 
 
 def _get_provider_cfg(provider_id) -> dict:
-    provider_cfg = _get_providers_cfg().get(provider_id, {})
+    providers = _get_providers_cfg()
+    provider_cfg = providers.get(provider_id)
+    if provider_cfg is None:
+        canonical = _canonicalise_provider_id(provider_id)
+        provider_cfg = next((value for key, value in providers.items()
+                             if _canonicalise_provider_id(key) == canonical), {})
     return provider_cfg if isinstance(provider_cfg, dict) else {}
 
 
@@ -2865,6 +2917,14 @@ def resolve_model_provider(model_id: str, *, explicitly_picked: bool = False) ->
     config_provider = None
     config_base_url = None
     model_cfg = cfg.get("model", {})
+    if str(model_id or "").strip().startswith("@!:"):
+        # Reserved selection carries endpoint ownership, before any record scan.
+        active = str(model_cfg.get("provider") or "").strip().lower() if isinstance(model_cfg, dict) else ""
+        base = str(model_cfg.get("base_url") or "").strip() if isinstance(model_cfg, dict) else ""
+        bare = str(model_id).strip()[3:]
+        if not bare or not base or active.startswith("custom:"):
+            raise ValueError("Configured Custom endpoint is not available")
+        return bare, "custom", base
     if isinstance(model_cfg, dict):
         config_base_url = model_cfg.get("base_url")
         config_provider = _resolve_configured_provider_id(
@@ -4849,10 +4909,18 @@ def model_with_provider_context(model_id: str, model_provider: str | None = None
     if isinstance(model_cfg, dict):
         config_provider = str(model_cfg.get("provider") or "").strip().lower()
 
+    if (
+        provider == "custom"
+        and isinstance(model_cfg, dict)
+        and model_cfg.get("base_url")
+        and (config_provider == "local" or _is_local_server_provider(config_provider or ""))
+    ):
+        return f"@!:{model}"
+
     # ACP subprocess providers always need the explicit hint — their slash IDs
     # are not OpenRouter paths and must not inherit config_provider routing.
     if provider in _ACP_SUBPROCESS_PROVIDERS:
-        return f"@{provider}:{model}"
+        return _encode_provider_qualified_model_id(model, provider)
 
     # Plugin-only model providers (e.g. 9router, and other model plugins whose
     # slugs are not in the static provider tables) route through the plugin, not
@@ -4862,12 +4930,12 @@ def model_with_provider_context(model_id: str, model_provider: str | None = None
     # would be sent to the wrong backend. Emit the explicit hint so it stays
     # routable to the plugin that surfaced it. (#5909 gate finding)
     if _is_plugin_model_provider(provider):
-        return f"@{provider}:{model}"
+        return _encode_provider_qualified_model_id(model, provider)
 
     # Codex live/cache models are intentionally absent from the static catalog,
     # so bare same-provider IDs can be claimed by overlapping providers.* entries.
     if provider == "openai-codex":
-        return f"@{provider}:{model}"
+        return _encode_provider_qualified_model_id(model, provider)
 
     # If the selected provider is already the configured provider, leaving the
     # model bare preserves provider-specific base_url/proxy settings.
@@ -4876,7 +4944,7 @@ def model_with_provider_context(model_id: str, model_provider: str | None = None
 
     # OpenRouter selections with slash IDs are explicit provider/model paths.
     if provider == "openrouter":
-        return f"@{provider}:{model}"
+        return _encode_provider_qualified_model_id(model, provider)
 
     # Explicit providers configured in config.yaml (for example local llama.cpp,
     # Ollama, LM Studio, vLLM, or other OpenAI-compatible endpoints) must keep
@@ -4885,8 +4953,11 @@ def model_with_provider_context(model_id: str, model_provider: str | None = None
     # 'unsloth/gemma-4-12b-it-GGUF:UD-Q4_K_XL' inherits the default provider
     # (e.g. openai-codex) and is sent to the wrong backend.
     providers_cfg = cfg.get("providers") if isinstance(cfg, dict) else {}
-    if isinstance(providers_cfg, dict) and provider in providers_cfg:
-        return f"@{provider}:{model}"
+    if isinstance(providers_cfg, dict) and any(
+        _canonicalise_provider_id(key) == _canonicalise_provider_id(provider)
+        for key in providers_cfg
+    ):
+        return _encode_provider_qualified_model_id(model, provider)
 
     # (Plugin-only provider routing handled above, before the config_provider
     # bare-passthrough.)
@@ -4904,7 +4975,7 @@ def model_with_provider_context(model_id: str, model_provider: str | None = None
     # control) so custom/proxy base_url routing stays in charge.
     if "/" in model:
         if provider in _PROVIDER_MODELS or provider in _PROVIDER_DISPLAY:
-            return f"@{provider}:{model}"
+            return _encode_provider_qualified_model_id(model, provider)
         # A named custom provider is only routable when the slug resolves to a
         # real, unique custom_providers[] entry. `custom:missing` (stale
         # session provider, no config entry) must NOT be minted into an
@@ -4921,10 +4992,10 @@ def model_with_provider_context(model_id: str, model_provider: str | None = None
                 )
                 is not None
             ):
-                return f"@{provider}:{model}"
+                return _encode_provider_qualified_model_id(model, provider)
         return model
 
-    return f"@{provider}:{model}"
+    return _encode_provider_qualified_model_id(model, provider)
 
 
 def canonical_model_provider_lane(model_id: str, model_provider: str | None = None) -> tuple[str, str | None]:
@@ -5008,6 +5079,10 @@ def _strip_provider_hint_for_reasoning(model_id: str, provider: str | None = Non
     model = str(model_id or "").strip()
     if not model.startswith("@"):
         return model
+    if model.startswith("@!:") or (model.startswith("@") and "%" in model.split(":", 1)[0]):
+        parsed = _parse_provider_qualified_model_id(model)
+        if parsed:
+            return parsed[0]
     if provider:
         exact_prefix = f"@{provider}:".lower()
         if model.lower().startswith(exact_prefix):
@@ -6592,6 +6667,10 @@ def _provider_native_auxiliary_model(provider: str, model: str) -> str:
     if not model_id.startswith("@") or ":" not in model_id:
         return model_id
 
+    parsed = _parse_provider_qualified_model_id(model_id)
+    if parsed and provider_id != "auto" and parsed[1] == provider_id.lower() and parsed[0]:
+        return parsed[0]
+
     matching_prefix = f"@{provider_id}:"
     if provider_id != "auto" and model_id.startswith(matching_prefix):
         native_model = model_id[len(matching_prefix) :]
@@ -6987,7 +7066,7 @@ def _configured_model_badges_from_static_catalog(
         provider = entry["provider"]
         model = entry["model"]
         raw_candidates: list[str] = []
-        for candidate in (model, f"@{provider}:{model}"):
+        for candidate in (model, _encode_provider_qualified_model_id(model, provider)):
             if candidate and candidate not in raw_candidates:
                 raw_candidates.append(candidate)
 
@@ -7360,7 +7439,7 @@ def _static_models_catalog_without_live_probes() -> dict:
                 for group in groups
                 for model in group.get("models", [])
             }
-            if default_model not in all_model_ids and f"@{active_provider}:{default_model}" not in all_model_ids:
+            if default_model not in all_model_ids and _encode_catalog_route(default_model, active_provider) not in all_model_ids:
                 label = _get_label_for_model(default_model, groups)
                 target_group = next(
                     (group for group in groups if group.get("provider_id") == active_provider),
@@ -9092,7 +9171,7 @@ def get_available_models(*, prefer_cache: bool = False, force_refresh: bool = Fa
                 raw_candidates: list[str] = []
                 for candidate in (
                     model,
-                    f"@{provider}:{model}",
+                    _encode_provider_qualified_model_id(model, provider),
                 ):
                     if candidate and candidate not in raw_candidates:
                         raw_candidates.append(candidate)
@@ -9780,7 +9859,7 @@ def get_available_models(*, prefer_cache: bool = False, force_refresh: bool = Fa
                         detected_providers.add(_slug)
                         _cp_option_id = _live_id
                         if active_provider != _slug and not _cp_option_id.startswith("@"):
-                            _cp_option_id = f"@{_slug}:{_cp_option_id}"
+                            _cp_option_id = _encode_provider_qualified_model_id(_cp_option_id, _slug)
                         _named_custom_groups[_slug][1].append(
                             {"id": _cp_option_id, "label": _live_model.get("label") or _get_label_for_model(_live_id, [])}
                         )
@@ -9803,7 +9882,7 @@ def get_available_models(*, prefer_cache: bool = False, force_refresh: bool = Fa
                             detected_providers.add(_slug)
                             _cp_option_id = _cp_model
                             if active_provider != _slug and not _cp_option_id.startswith("@"):
-                                _cp_option_id = f"@{_slug}:{_cp_option_id}"
+                                _cp_option_id = _encode_provider_qualified_model_id(_cp_option_id, _slug)
                             _named_custom_groups[_slug][1].append(
                                 {"id": _cp_option_id, "label": _cp_label}
                             )

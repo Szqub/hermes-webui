@@ -23,6 +23,10 @@ contributor guidance; it does not change runtime behavior or CI gates.
 
 ## Runtime, durability, and state contracts
 
+- [`docs/architecture/configured-custom-routing.md`](architecture/configured-custom-routing.md):
+  configured Custom endpoint ownership, reserved route grammar, generic-provider
+  escaping and disjointness proof, legacy compatibility, and acceptance matrix.
+
 - [`docs/remote-workspaces.md`](remote-workspaces.md):
   architecture contract for remote terminal workspaces (SSH/Docker), target-side
   POSIX path preservation against macOS synthetic firmlink expansion, and

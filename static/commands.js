@@ -698,18 +698,20 @@ function _buildModelCandidates(sel,groups){
 function _resolveModelAliasTarget(options,providerMap,target){
   if(target&&typeof target==='object'){
     const model=String(target.model||'').trim();
-    const routeProvider=String(target.route_provider||'').trim();
+    const routeProvider=String(target.route_provider||'').trim().toLowerCase();
     if(model&&routeProvider){
-      return {value:`@${routeProvider}:${model}`,provider:routeProvider};
+      const value=routeProvider==='custom'?`@!:${model}`
+        :typeof _encodeModelRoute==='function'?_encodeModelRoute(routeProvider,model):`@${routeProvider.replace(/%/g,'%25').replace(/!/g,'%21')}:${model}`;
+      return {value,provider:routeProvider};
     }
     return null;
   }
   const raw=String(target||'').trim();
   const slash=raw.indexOf('/');
   if(slash<=0||slash===raw.length-1) return null;
-  const provider=raw.slice(0,slash);
+  const provider=raw.slice(0,slash).trim().toLowerCase();
   const model=raw.slice(slash+1);
-  const routedPrefix=`@${provider}:`;
+  const routedPrefix=typeof _encodeModelRoute==='function'?_encodeModelRoute(provider,''):`@${provider.replace(/%/g,'%25').replace(/!/g,'%21')}:`;
   for(const option of (options||[])){
     const value=String(option&&option.value!==undefined?option.value:option);
     let optionProvider=String((providerMap&&providerMap[value])||'');
@@ -717,7 +719,9 @@ function _resolveModelAliasTarget(options,providerMap,target){
       optionProvider=String(_providerFromModelValue(value)||'');
     }
     if(optionProvider.toLowerCase()!==provider.toLowerCase()) continue;
-    const nativeModel=value.toLowerCase().startsWith(routedPrefix.toLowerCase())
+    const route=typeof _parseModelRoute==='function'?_parseModelRoute(value,provider):null;
+    const nativeModel=route&&route.provider===provider?route.model
+      :value.toLowerCase().startsWith(routedPrefix.toLowerCase())
       ?value.slice(routedPrefix.length)
       :value;
     if(nativeModel.toLowerCase()===model.toLowerCase()) return {value,provider};

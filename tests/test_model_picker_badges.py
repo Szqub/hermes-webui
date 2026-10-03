@@ -65,7 +65,9 @@ def test_duplicate_slash_id_primary_badge_sticks_to_matching_provider_only():
     end = src.index("            return badges", start) + len("            return badges")
     fn_src = textwrap.dedent(src[start:end])
 
+    from api.config import _encode_provider_qualified_model_id
     scope = {
+        "_encode_provider_qualified_model_id": _encode_provider_qualified_model_id,
         "active_provider": "custom:beta",
         "default_model": "google/gemma-4-27b",
         "cfg": {"fallback_providers": []},

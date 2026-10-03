@@ -3157,6 +3157,60 @@ const PENDING_SESSION_MODEL_MAX_AGE_MS=10*60*1000;
 // When a preferred provider is supplied, duplicate normalized IDs prefer that
 // provider's option so Settings/profile rehydration doesn't snap back to the
 // first colliding entry.
+// Generic catalog routes retain legacy-safe provider spellings. The dedicated
+// configured Custom lane uses @!: instead, only at explicit selection boundaries.
+function _encodeModelRoute(providerId, modelId){
+  const provider=String(providerId||'').trim().toLowerCase();
+  const model=String(modelId||'');
+  if(!provider) return model;
+  const endpoint=/^custom:([a-z0-9_.~-]+):([0-9]+)$/.exec(provider);
+  const safe=/^[a-z0-9_.~-]+$/.test(provider)
+    || /^custom:[a-z0-9_.~-]+$/.test(provider)
+    || (endpoint&&Number(endpoint[2])>=1&&Number(endpoint[2])<=65535
+      &&(endpoint[1]==='localhost'||endpoint[1].includes('.')));
+  const token=safe?provider:encodeURIComponent(provider).replace(/!/g,'%21');
+  return `@${token}:${model}`;
+}
+function _parseModelRoute(modelId, providerId){
+  const value=String(modelId||'');
+  if(value.startsWith('@!:')) return {provider:'custom',model:value.slice(3)};
+  if(!value.startsWith('@')||!value.includes(':')) return null;
+  const colon=value.indexOf(':');
+  const token=value.slice(1,colon);
+  // Decode just the provider token once. Model suffixes are opaque upstream IDs.
+  if(token.includes('%')){
+    let provider=token;
+    try{provider=decodeURIComponent(token);}catch(_){}
+    return {provider:provider.trim().toLowerCase(),model:value.slice(colon+1)};
+  }
+  // Legacy @custom: values keep the parser rule Python applies to the same
+  // bytes — one slug segment, or host:port — BEFORE any caller hint. A hint
+  // must never re-read a colon-bearing suffix as the configured lane: the two
+  // languages would then disagree about which endpoint the stored value names.
+  if(value.startsWith('@custom:')){
+    const rest=value.slice('@custom:'.length);
+    const parts=rest.split(':');
+    let splitAt=rest.indexOf(':');
+    if(parts.length>=3&&/^\d+$/.test(parts[1])){
+      const port=Number(parts[1]);
+      const host=parts[0].toLowerCase();
+      if(port>=1&&port<=65535&&(host==='localhost'||host.includes('.'))){
+        splitAt=parts[0].length+1+parts[1].length;
+      }
+    }
+    return splitAt<0
+      ? {provider:'custom',model:rest}
+      : {provider:('custom:'+rest.slice(0,splitAt)).toLowerCase(),model:rest.slice(splitAt+1)};
+  }
+  const hint=String(providerId||'').trim().toLowerCase();
+  const prefix=hint?`@${hint}:`:'';
+  if(prefix&&value.toLowerCase().startsWith(prefix)){
+    return {provider:hint,model:value.slice(prefix.length)};
+  }
+  return {provider:token.toLowerCase(),model:value.slice(colon+1)};
+}
+// Legacy branches below also keep the standalone picker helpers usable when
+// extracted without the shared route helpers.
 function _getOptionProviderId(opt){
   if(!opt) return '';
   if(opt.dataset && opt.dataset.provider) return opt.dataset.provider;
@@ -3165,6 +3219,7 @@ function _getOptionProviderId(opt){
     return group.dataset.provider;
   }
   const value=String(opt.value||'');
+  if(typeof _parseModelRoute==='function') return (_parseModelRoute(value)||{}).provider||'';
   if(value.startsWith('@') && value.includes(':')){
     // Non-greedy parse for @custom:<slug>:<model> — provider is the slug only.
     // Preserves endpoint-style host:port custom slugs (e.g. custom:localhost:11434)
@@ -3191,6 +3246,7 @@ function _getOptionProviderId(opt){
 }
 function _providerFromModelValue(modelId){
   const value=String(modelId||'').trim();
+  if(typeof _parseModelRoute==='function') return (_parseModelRoute(value)||{}).provider||'';
   if(value.startsWith('@')&&value.includes(':')){
     // Non-greedy parse for @custom:<slug>:<model> — provider is the slug only.
     // Preserves endpoint-style host:port custom slugs (e.g. custom:localhost:11434)
@@ -3218,6 +3274,10 @@ function _providerFromModelValue(modelId){
 function _modelPickerOptionIdentity(modelId, providerId){
   let value=String(modelId||'');
   const provider=String(providerId||'').trim();
+  if(typeof _parseModelRoute==='function'){
+    const route=_parseModelRoute(value,provider);
+    return (route?route.model:value).replace(/-/g,'.').toLowerCase();
+  }
   if(value.startsWith('@')&&value.includes(':')){
     const exactPrefix=provider ? `@${provider}:` : '';
     if(exactPrefix && value.toLowerCase().startsWith(exactPrefix.toLowerCase())){
@@ -3308,6 +3368,17 @@ function _modelStateForSelect(sel, modelId){
     const effectiveProvider=routedProvider||explicitProvider;
     const effectiveProviderLc=effectiveProvider.toLowerCase();
     const isCustomProvider=effectiveProviderLc==='custom'||effectiveProviderLc.startsWith('custom:');
+    if(typeof _parseModelRoute==='function'){
+      const route=_parseModelRoute(value,effectiveProvider);
+      // A value that already carries a provider keeps it: the option metadata
+      // says which group listed it, not which record the value names (#7955).
+      // Only a custom namespace is stripped down to its identifier — a
+      // non-custom qualified id is a real provider namespace (#1771).
+      const valueProvider=route&&route.provider?String(route.provider).toLowerCase():'';
+      const stripToId=valueProvider==='custom'||valueProvider.startsWith('custom:');
+      return {model:routedModel||(stripToId&&route?route.model:value)||value,
+        model_provider:valueProvider||effectiveProvider};
+    }
     const explicitPrefix=`@${effectiveProvider}:`;
     const strippedModel=isCustomProvider&&value.toLowerCase().startsWith(explicitPrefix.toLowerCase())
       ?value.slice(explicitPrefix.length)
@@ -3586,18 +3657,25 @@ function _findModelInDropdown(modelId, sel, preferredProviderId){
   // 1. Restore lookup keeps the older hierarchy-preserving matcher instead of
   // the picker-dedup identity, so missing qualified models do not substitute a
   // different suffix-sharing sibling.
-  const norm=s=>String(s||'')
+  const norm=s=>(typeof _parseModelRoute==='function'
+    ? ((_parseModelRoute(s)||{}).model||String(s||''))
+    : String(s||'').replace(/^@([^:]+:)+/,''))
     .toLowerCase()
-    .replace(/^@([^:]+:)+/,'')
     .replace(/^[^/]+\//,'')
     .replace(/-/g,'.');
   const target=norm(modelId);
   let explicitProvider='';
   const rawModel=String(modelId||'');
   if(rawModel.startsWith('@')&&rawModel.includes(':')){
-    explicitProvider=rawModel.slice(1,rawModel.lastIndexOf(':'));
+    explicitProvider=typeof _providerFromModelValue==='function'
+      ? _providerFromModelValue(rawModel)
+      : rawModel.slice(1,rawModel.lastIndexOf(':'));
   }
-  const preferred=String(preferredProviderId||explicitProvider||'').toLowerCase();
+  // A provider carried by the qualified value itself outranks the caller hint:
+  // the hint can only say which lane the session was on, not which record the
+  // value names. Letting the hint win lets a differently-providenced option be
+  // substituted for a stored value, silently moving the endpoint on restore.
+  const preferred=String(explicitProvider||preferredProviderId||'').toLowerCase();
   if(preferred){
     if(preferred==='custom'||preferred.startsWith('custom:')){
       // A slash is part of a custom endpoint's upstream model ID, not a
@@ -3605,6 +3683,10 @@ function _findModelInDropdown(modelId, sel, preferredProviderId){
       // WebUI's @provider: wrapper and dash/dot spelling compatibility).
       const routeNorm=value=>{
         let routed=String(value||'');
+        if(typeof _parseModelRoute==='function'){
+          const route=_parseModelRoute(routed,preferred);
+          return (route?route.model:routed).toLowerCase().replace(/-/g,'.');
+        }
         const prefix=`@${preferred}:`;
         if(routed.toLowerCase().startsWith(prefix)) routed=routed.slice(prefix.length);
         return routed.toLowerCase().replace(/-/g,'.');
@@ -3619,7 +3701,9 @@ function _findModelInDropdown(modelId, sel, preferredProviderId){
       if(!rawModel.includes('/')&&!rawModel.startsWith('@')){
         const prefix=`@${preferred}:`;
         const suffixMatches=providerOptions.filter(o=>
-          String(o.value||'').toLowerCase().startsWith(prefix)
+          (typeof _parseModelRoute==='function'
+            ? ((_parseModelRoute(o.value,preferred)||{}).provider===preferred)
+            : String(o.value||'').toLowerCase().startsWith(prefix))
           &&norm(o.value)===target
         );
         if(suffixMatches.length===1) return suffixMatches[0].value;
@@ -3634,13 +3718,23 @@ function _findModelInDropdown(modelId, sel, preferredProviderId){
   // available, return null instead of snapping to the first group's
   // option. This prevents a deliberate non-default pick from reverting
   // to the default provider on re-render (#6195).
-  const exact=opts.find(o=>norm(o)===target);
-  if(exact){
-    const normMatches=options.filter(o=>norm(o.value)===target);
-    if(normMatches.length>1 && !preferred && !explicitProvider && !rawModel.includes('/')){
+  const exactCandidates=options.filter(o=>norm(o.value)===target);
+  if(exactCandidates.length){
+    if(explicitProvider){
+      // The request names its own provider, so an identically-named option
+      // belonging to another one is not a match: substituting it would route a
+      // stored value to a different endpoint (#7955).
+      const requested=String(explicitProvider).toLowerCase();
+      const sameProvider=exactCandidates.filter(o=>{
+        const p=_getOptionProviderId(o).toLowerCase();
+        return !p||p===requested;
+      });
+      return sameProvider.length?sameProvider[0].value:null;
+    }
+    if(exactCandidates.length>1 && !preferred && !rawModel.includes('/')){
       return null;  // ambiguous bare id — caller must inject the correct option
     }
-    return exact;
+    return exactCandidates[0].value;
   }
   // If the request is provider-qualified (either explicit @provider:model or
   // a slash-qualified vendor/model id), do NOT fuzzy-match a sibling model
@@ -3740,7 +3834,7 @@ function _applyModelToDropdown(modelId, sel, preferredProviderId, opts){
 function _ensureModelOptionInDropdown(modelId, sel, preferredProviderId){
   if(!modelId||!sel) return null;
   if(typeof _deduplicateModelPickerOptions==='function') _deduplicateModelPickerOptions(sel,sel.value);
-  const requestedProvider=String(preferredProviderId||_providerFromModelValue(modelId)||'').trim();
+  const requestedProvider=String(preferredProviderId||_providerFromModelValue(modelId)||'').trim().toLowerCase();
   const applied=_applyModelToDropdown(modelId,sel,requestedProvider||null);
   if(applied){
     const appliedState=typeof _modelStateForSelect==='function'
@@ -3750,10 +3844,19 @@ function _ensureModelOptionInDropdown(modelId, sel, preferredProviderId){
   }
   const explicitPrefix=requestedProvider?`@${requestedProvider}:`:'';
   const rawModel=String(modelId||'');
-  const bareModel=explicitPrefix&&rawModel.toLowerCase().startsWith(explicitPrefix.toLowerCase())
+  const route=typeof _parseModelRoute==='function'?_parseModelRoute(rawModel,requestedProvider):null;
+  // A value that is already qualified keeps its own provider and its own bytes.
+  // Re-encoding it under the caller's hint is exactly what moved a stored value
+  // to a different endpoint (#7955).
+  const qualifiedRoute=route;
+  const bareModel=qualifiedRoute?qualifiedRoute.model
+    :explicitPrefix&&rawModel.toLowerCase().startsWith(explicitPrefix.toLowerCase())
     ?rawModel.slice(explicitPrefix.length)
     :rawModel;
-  const value=requestedProvider?`${explicitPrefix}${bareModel}`:rawModel;
+  const value=qualifiedRoute?rawModel
+    :requestedProvider==='custom'?`@!:${bareModel}`
+    :typeof _encodeModelRoute==='function'?_encodeModelRoute(requestedProvider,bareModel)
+    :requestedProvider?`@${requestedProvider.replace(/%/g,'%25').replace(/!/g,'%21')}:${bareModel}`:rawModel;
   const opt=document.createElement('option');
   opt.value=value;
   opt.textContent=typeof getModelLabel==='function'?getModelLabel(modelId):modelId;
@@ -3764,7 +3867,8 @@ function _ensureModelOptionInDropdown(modelId, sel, preferredProviderId){
   if(rawBadge&&rawBadge.provider) opt.dataset.provider=rawBadge.provider;
   if(requestedProvider) opt.dataset.model=bareModel;
   const provider=requestedProvider||(badge&&badge.provider)||(rawBadge&&rawBadge.provider)||_providerFromModelValue(value)||'';
-  if(provider) opt.dataset.provider=provider;
+  if(qualifiedRoute) opt.dataset.provider=qualifiedRoute.provider;
+  else if(provider) opt.dataset.provider=provider;
   sel.appendChild(opt);
   sel.value=value;
   if(sel.id==='modelSelect'){
@@ -4010,7 +4114,7 @@ function _addLiveModelsToSelect(provider, models, sel){
   for(const m of models){
     let mid=m.id;
     if(_isPortalFetch && !mid.startsWith('@')){
-      mid=`@${provider}:${mid}`;
+      mid=typeof _encodeModelRoute==='function'?_encodeModelRoute(provider,mid):`@${provider.replace(/%/g,'%25').replace(/!/g,'%21')}:${mid}`;
     }
     if(existingIds.has(mid)) continue;
     const identity=optionIdentity(mid,provider);
@@ -4131,10 +4235,12 @@ function _selectedModelOption(){
 function _normalizeConfiguredModelKey(modelId){
   let s=String(modelId||'').trim().toLowerCase();
   let strippedAtProvider=false;
-  // Strip @provider: prefix (e.g., @custom:jingdong:GLM-5 -> jingdong:GLM-5).
-  // Defensive: trailing-colon / trailing-slash falls back to the original key
-  // so malformed configs don't collapse distinct ids to '' (matches backend _norm_model_id).
-  if(s.startsWith('@')&&s.includes(':')){const ci=s.indexOf(':',1);const cand=s.slice(ci+1);strippedAtProvider=!!cand;s=cand||s;}
+  if(typeof _parseModelRoute==='function'&&(s.startsWith('@!:')||/^@[^:]*%[^:]*:/.test(s))){
+    const route=_parseModelRoute(s);
+    if(route&&route.model){s=route.model;strippedAtProvider=true;}
+  }
+  // Keep legacy keys and trailing-empty guards in sync with backend _norm_model_id.
+  if(!strippedAtProvider&&s.startsWith('@')&&s.includes(':')){const ci=s.indexOf(':',1);const cand=s.slice(ci+1);strippedAtProvider=!!cand;s=cand||s;}
   // Skip slash-based stripping for URI-scheme IDs (e.g. gpt://folder/model)
   // whose slashes are path separators, not provider delimiters (#3429).
   const _hasScheme=/^[a-z][a-z0-9+.-]*:\/\//i.test(s);
@@ -4147,12 +4253,7 @@ function _normalizeConfiguredModelKey(modelId){
     if(!strippedAtProvider&&s.includes('/')&&s.indexOf(':')!==-1&&s.indexOf(':')<s.indexOf('/')){
       s=s.slice(s.indexOf('/')+1)||s;
     }
-    // Strip only the first slash-segment (provider prefix), preserving any
-    // remaining vendor hierarchy. Using split('/').pop() here previously
-    // discarded ALL segments except the last, collapsing distinct multi-slash
-    // IDs like 'vendor_a/deepseek-v4-pro' and 'vendor_b/deepseek/deepseek-v4-pro'
-    // to the same key, causing badge misattribution and configured-entry
-    // suppression (#3360).
+    // Strip one slash-segment only; preserve vendor hierarchy (#3360).
     if(s.includes('/')) s=s.replace(/^[^/]+\//, '')||s;
   }
   return s.replace(/-/g,'.');
@@ -4195,6 +4296,13 @@ function _isEquivalentConfiguredModelEntry(modelId,badge,entries){
     )) return true;
   }
   const prefix=provider?`@${provider}:`:'';
+  const route=typeof _parseModelRoute==='function'?_parseModelRoute(rawId,provider):null;
+  if(route){
+    return route.provider===provider&&(entries||[]).some(entry=>
+      String(entry.providerId||'').toLowerCase()===provider
+      &&_normalizeConfiguredModelKey(entry.value)===_normalizeConfiguredModelKey(route.model)
+    );
+  }
   if(!prefix||!rawId.toLowerCase().startsWith(prefix)) return false;
   const routedId=rawId.slice(prefix.length);
   return (entries||[]).some(entry=>
@@ -4588,7 +4696,9 @@ function renderModelDropdown(){
     return _groupMeta.get(groupKey);
   };
   const _vendorPrefix=(rawId)=>{
-    const stripped=String(rawId||'').replace(/^@([^:]+:)+/,'');
+    const stripped=typeof _parseModelRoute==='function'
+      ? ((_parseModelRoute(rawId)||{}).model||String(rawId||''))
+      : String(rawId||'').replace(/^@([^:]+:)+/,'');
     const slash=stripped.indexOf('/');
     return slash>0?stripped.slice(0,slash):'';
   };
@@ -4606,7 +4716,7 @@ function renderModelDropdown(){
       groupMeta.modelsEndpointError=modelsEndpointError;
       for(const opt of Array.from(child.children)){
         const rawValue=String(opt.value||'');
-        const displayName=rawValue.startsWith('@custom:')
+        const displayName=/^@(?:!:|custom(?::|%3a))/i.test(rawValue)
           ? getModelLabel(rawValue)
           : (opt.textContent||getModelLabel(rawValue));
         const entry={value:opt.value,name:esc(displayName),id:esc(opt.value),group:child.label||'',groupKey,providerId,modelsEndpointError,badge:_getConfiguredModelBadge(opt.value,_badgeMap,providerId),hiddenByDefault:false};
@@ -4614,7 +4724,7 @@ function renderModelDropdown(){
         groupMeta.modelCount++;
       }
       for(const overflowModel of _readModelOverflowData(child)){
-        const displayName=overflowModel.id.startsWith('@custom:')
+        const displayName=/^@(?:!:|custom(?::|%3a))/i.test(overflowModel.id)
           ? getModelLabel(overflowModel.id)
           : (overflowModel.label||getModelLabel(overflowModel.id));
         _modelData.push({
@@ -4640,7 +4750,7 @@ function renderModelDropdown(){
       const groupKey='__ungrouped__';
       _ensureGroupMeta(groupKey,'','',null);
       const rawValue=String(child.value||'');
-      const displayName=rawValue.startsWith('@custom:')
+      const displayName=/^@(?:!:|custom(?::|%3a))/i.test(rawValue)
         ? getModelLabel(rawValue)
         : (child.textContent||getModelLabel(rawValue));
       _modelData.push({value:child.value,name:esc(displayName),id:esc(child.value),group:'',groupKey,providerId:'',badge:_getConfiguredModelBadge(child.value,_badgeMap),hiddenByDefault:false});
@@ -7664,6 +7774,11 @@ function getModelLabel(modelId){
   // first-colon split alone cannot tell a `@custom:<slug>:<model>` from a
   // plain-lane `@custom:<model-with-colon>` (#7240).
   if(_dynamicModelLabels[modelId]) return _dynamicModelLabels[modelId];
+  if(rawId.startsWith('@!:')) return rawId.slice(3)||rawId;
+  if(typeof _parseModelRoute==='function'&&/^@[^:]*%[^:]*:/.test(rawId)){
+    const route=_parseModelRoute(rawId);
+    return route&&route.model||rawId;
+  }
   // Preserve custom gateway model IDs exactly as configured. A custom id is
   // `@custom:<model>` in the plain custom lane or `@custom:<slug>:<model>` for
   // a named custom provider; the provider slug may itself be an endpoint

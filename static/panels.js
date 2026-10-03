@@ -1969,6 +1969,10 @@ function cancelCronForm(){
 
 function _modelBareNameForProvider(model, provider) {
   // Strip @provider: prefix from a model value when provider is stored separately.
+  if(model&&provider&&typeof _parseModelRoute==='function'){
+    const route=_parseModelRoute(model,provider);
+    return route&&route.provider===String(provider).trim().toLowerCase()?route.model:model;
+  }
   if (model && provider && model.startsWith('@' + provider + ':')) {
     return model.slice(('@' + provider + ':').length);
   }
