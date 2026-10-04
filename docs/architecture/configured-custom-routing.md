@@ -94,28 +94,35 @@ Configured base: `http://127.0.0.1:11434/v1`. Run the overlap rows for each of
 
 ## Persisted legacy strings
 
-No automatic migration guesses the origin of `@custom:qwen3:8b`. It still
-means identifier `8b` on named provider `custom:qwen3`. If that record exists,
-it resolves there; if absent, it retains the missing-provider outcome. A plain
-`@custom:mistral-7b` remains a generic Custom hint. Re-selecting the configured
-Custom entry writes the unambiguous representation. This preserves deliberate
-named selections instead of silently stealing them to repair indistinguishable
-old Custom picks.
+No automatic migration guesses the origin of `@custom:qwen3:8b`. Read on its
+own — the wire parse, with no lane context — it still means identifier `8b` on
+named provider `custom:qwen3`; if that record exists, it resolves there, and if
+absent it retains the missing-provider outcome. The picker reads it differently
+only when it knows the option was listed under the plain `custom` lane, in which
+case the whole remainder is the identifier. A plain `@custom:mistral-7b` remains
+a generic Custom hint. Re-selecting the configured Custom entry writes the
+unambiguous representation. This preserves deliberate named selections instead
+of silently stealing them to repair indistinguishable old Custom picks.
 
-A caller-supplied provider hint never overrides that rule. In particular, the
-browser restore path may know only that the stored lane was `custom`, which is
-exactly the ambiguity `@custom:qwen3:8b` cannot answer; re-reading it as the
-configured lane would show one endpoint in the picker while the runtime resolved
-another. Both languages therefore apply the same legacy split first, and a
-restored value is injected verbatim. Reaching the configured endpoint for a
-stored colon-bearing identifier requires re-selecting the entry.
+A caller-supplied provider hint decides only when it matches the value exactly.
+The browser restore path may know that the stored lane was `custom`, which is
+exactly the ambiguity `@custom:qwen3:8b` cannot answer on its own; re-reading it
+as the configured lane would show one endpoint in the picker while the runtime
+resolved another. So an exact hint prefix is honoured first, and the legacy split
+runs only when no hint matches — which keeps both languages in agreement about
+what an unhinted stored value names. A restored value is injected verbatim.
+Reaching the configured endpoint for a stored colon-bearing identifier requires
+re-selecting the entry.
 
 Option lookup, session restore and picker state all follow the same rule: the
-provider carried by a qualified value outranks the caller's hint, so a stored
-value is never substituted by an identically-named option belonging to another
-provider, and it is never re-wrapped under the hint. Otherwise a dropdown
-holding the configured-lane option `@!:` would replace a stored record value —
-the same identifier under a different endpoint.
+lane named by the matched option decides the prefix, because the catalog sets an
+option's `data-provider` to the group that listed it. A plain Custom-lane option
+is therefore `@custom:<model>` in group `custom`, and the whole remainder is the
+identifier — splitting at the first colon would read a colon-bearing id as a
+record name and truncate it to `8b`. A value read under a named record
+(`@custom:backup:model-a` with hint `custom:backup`) still resolves to that
+record and model `model-a`, so a stored value is never substituted by an
+identically-named option belonging to another provider.
 
 The catalog cooperates instead of relying on that precedence: an option for the
 configured lane is emitted as `@!:M`, never as `@custom:M`, because the latter
