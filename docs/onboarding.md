@@ -104,6 +104,13 @@ Most LM Studio, Ollama, vLLM, llama-server, and TabbyAPI installs run this way.
 Use **Test connection** to verify the Base URL and populate the model list
 before continuing.
 
+Existing named custom providers (`custom:<name>`) use their configured endpoint
+for readiness checks too. Keyless endpoints are ready with a base URL and model.
+Credential references in `key_env` (or `api_key_env` under `providers:`) resolve
+in the active profile; an unresolved credential is not treated as keyless.
+Provider credential checks use the same named record as chat routing, including
+legacy `custom_providers` entries.
+
 AIML API uses the existing custom OpenAI-compatible setup path, not a
 first-class built-in Hermes provider id. Configure it under the
 custom-provider flow with Base URL `https://api.aimlapi.com/v1`, then use
