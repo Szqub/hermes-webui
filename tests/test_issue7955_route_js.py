@@ -199,7 +199,7 @@ def test_generic_decoding_is_single_pass_and_does_not_decode_model(tmp_path):
     ]) == [
         dict(provider="!", model="a%3Ab:c"), dict(provider="%21", model="a:b"),
         dict(provider="vendor:east", model="host/model:tag"), dict(provider="custom", model="qwen3:8b"),
-        dict(provider="bad%zz", model="model:tag"), dict(provider="custom:qwen3", model="8b"), None,
+        dict(provider="bad%zz", model="model:tag"), dict(provider="custom", model="qwen3:8b"), None,
     ]
 
 
@@ -235,10 +235,12 @@ def test_injecting_existing_route_never_double_wraps_or_decodes_suffix(tmp_path)
     assert [row["value"] for row in out] == [
         "@!:qwen3:8b", "@custom:qwen3:8b", "@custom%3Aeast%3Awest:Qwen%3A3:8b",
     ]
-    assert [row["state"]["model"] for row in out] == ["qwen3:8b", "8b", "Qwen%3A3:8b"]
-    # The legacy value keeps the runtime's own reading (named record, id `8b`),
-    # so a restored session is routed exactly where Python would route it.
-    assert [row["state"].get("model_provider") for row in out] == ["custom", "custom:qwen3", "custom:east:west"]
+    # The option's own lane decides the prefix: the catalog lists a plain
+    # Custom-lane model as `@custom:<model>` in group `custom`, so the whole
+    # remainder is the model id. Reading the first colon as a record separator
+    # would truncate it to `8b` and route to a provider that does not exist.
+    assert [row["state"]["model"] for row in out] == ["qwen3:8b", "qwen3:8b", "Qwen%3A3:8b"]
+    assert [row["state"].get("model_provider") for row in out] == ["custom", "custom", "custom:east:west"]
 
 
 def test_legacy_value_is_not_substituted_by_a_configured_lane_option(tmp_path):
@@ -261,10 +263,12 @@ def test_legacy_value_is_not_substituted_by_a_configured_lane_option(tmp_path):
     assert [row["selected"] for row in out] == [
         "@custom:qwen3:8b", "@custom:qwen3:8b", "@custom:qwen3:8b", "@!:qwen3:8b",
     ]
-    # The legacy value's own reading is preserved: named record, identifier `8b`.
-    assert [row["state"]["model"] for row in out] == ["8b", "8b", "8b", "qwen3:8b"]
+    # The lane named by the option decides: a plain Custom-lane value keeps the
+    # whole remainder as the model id, while a value read under the named record
+    # `custom:qwen3` really does name model `8b` there.
+    assert [row["state"]["model"] for row in out] == ["qwen3:8b", "qwen3:8b", "8b", "qwen3:8b"]
     assert [row["state"]["model_provider"] for row in out] == [
-        "custom:qwen3", "custom:qwen3", "custom:qwen3", "custom",
+        "custom", "custom", "custom:qwen3", "custom",
     ]
 
 
