@@ -111,13 +111,15 @@ real encoder and resolver:
   `tests/test_model_picker_badges.py` — **101 passed**.
 - Those tests fail on the base `cdff0b8d`: **79 failed, 12 passed**; the base
   source contains zero occurrences of `@!:`.
-- Full suite on this branch: **18004 passed, 6 failed, 236 skipped, 2 xfailed,
-  2 xpassed, 399 subtests passed** in 927s. None of the six come from this
-  change — `test_managed_profile_startup` and the two `test_tls_aware_probe`
-  cases fail identically on the base (the health probe needs a live server),
-  and the two `test_minimax_provider` cases plus
-  `test_profile_switch_models_disk_cache[plugin-version-bumped]` pass in
-  isolation on both trees (flaky under the full parallel run).
+- Full suite on this branch: **18007 passed, 3 failed, 236 skipped, 2 xfailed,
+  2 xpassed, 399 subtests passed** in 966s. The three failures are
+  environment-dependent and fail identically on the base `cdff0b8d`:
+  `test_managed_profile_startup::test_real_managed_bootstrap_preserves_named_profile_concurrency`
+  and the two `test_tls_aware_probe` cases (the health probe needs a live
+  server). A full run on the pre-fix state of this branch reported six, the
+  extra three (`test_minimax_provider` x2 and
+  `test_profile_switch_models_disk_cache[plugin-version-bumped]`) pass in
+  isolation on both trees and are flaky under the full parallel run.
 - Adversarial encoder inputs through the real catalog producer: `custom`,
   `custom:a:b`, `Custom:Lab`, `+x`, `%2Bx`, `foo bar`, `foo:bar:baz`, empty,
   whitespace-only, surrounding whitespace, non-string, a 10,000-character id,

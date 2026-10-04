@@ -24,7 +24,7 @@ directory. It is on the `handoff/7955` branch only; the PR branch is
 - Repo A: reported issue verified fixed end to end on the issue's own
   configuration (`model.provider: ollama` + `base_url`). Targeted suite
   **101 passed**; the same tests on the base `cdff0b8d` give **79 failed /
-  12 passed**. Full suite: **18004 passed, 6 failed** — all six independent of
+  12 passed**. Full suite: **18007 passed, 3 failed** — all six independent of
   the change and explained in `HANDOFF-7955.md`.
 - Repo B: tests **2 passed**, independent review APPROVE.
 

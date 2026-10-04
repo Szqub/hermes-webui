@@ -67,20 +67,21 @@ Regression evidence (the new tests pin the change, they are not vacuous):
 copied onto a worktree at the base `cdff0b8d` they give
 **79 failed, 12 passed**; the base source contains zero occurrences of `@!:`.
 
-Full-suite baseline (`./scripts/test.sh tests -q --timeout=240`, branch
-`c8d9f41c`): **18004 passed, 6 failed, 236 skipped, 2 xfailed, 2 xpassed,
-399 subtests passed** in 927s. None of the six are caused by this change:
+Full-suite baseline (`./scripts/test.sh tests -q --timeout=240`): **18007 passed,
+3 failed, 236 skipped, 2 xfailed, 2 xpassed, 399 subtests passed** in 966s on the
+fix branch. The three failures are environment-dependent and fail identically on
+the base `cdff0b8d`:
 
 - `tests/test_managed_profile_startup.py::test_real_managed_bootstrap_preserves_named_profile_concurrency`,
   `tests/test_tls_aware_probe.py::test_helper_self_signed_warns_and_succeeds`,
   `tests/test_tls_aware_probe.py::test_helper_insecure_optin_is_silent`
-  — **fail on the base `cdff0b8d` too** (environment-dependent: the health
-  probe needs a live server).
-- `tests/test_minimax_provider.py::test_minimax_api_key_in_env_scan_tuple`,
-  `tests/test_minimax_provider.py::test_minimax_cn_api_key_in_env_scan_tuple`,
-  `tests/test_profile_switch_models_disk_cache.py::test_switch_serves_snapshot_only_while_sources_are_unchanged[plugin-version-bumped]`
-  — **pass in isolation on both the base and this branch**; they are flaky under
-  the full parallel run, not regressions.
+  — the health probe needs a live server.
+
+A full run on the pre-fix state of this branch reported six; the extra three
+(`test_minimax_provider` x2 and
+`test_profile_switch_models_disk_cache[plugin-version-bumped]`) pass in isolation
+on both the base and this branch — flaky under the full parallel run, not
+regressions.
 
 ## Open blockers (independent review, gate 7 — both reviewers BLOCK)
 
