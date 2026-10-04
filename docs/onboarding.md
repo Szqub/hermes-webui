@@ -110,6 +110,8 @@ Credential references in `key_env` (or `api_key_env` under `providers:`) resolve
 in the active profile; an unresolved credential is not treated as keyless.
 Provider credential checks use the same named record as chat routing, including
 legacy `custom_providers` entries.
+Missing, disabled, or ambiguous named records are reported as configuration
+problems; only a selected record without an endpoint gets the base URL prompt.
 
 AIML API uses the existing custom OpenAI-compatible setup path, not a
 first-class built-in Hermes provider id. Configure it under the

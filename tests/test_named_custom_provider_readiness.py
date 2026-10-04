@@ -76,4 +76,10 @@ def test_unavailable_named_endpoint_stays_unready(custom_config, case):
         }
     else:
         custom_config["providers"]["local"].pop("base_url")
-    assert onboarding._status_from_runtime(custom_config, imports_ok=True)["chat_ready"] is False
+        custom_config["providers"]["local"]["api_key"] = "profile-placeholder"
+    status = onboarding._status_from_runtime(custom_config, imports_ok=True)
+    assert status["chat_ready"] is False
+    if case == "no_endpoint":
+        assert status["provider_note_key"] == "onboarding_notice_custom_base_url_required"
+    else:
+        assert status["provider_note_key"] == "onboarding_notice_custom_record_required"

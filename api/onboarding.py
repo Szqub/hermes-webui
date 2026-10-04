@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from api.auth import is_auth_enabled
 from api.config import (
     AmbiguousCustomProviderError,
+    CUSTOM_SELECTION_UNOWNED,
     DEFAULT_MODEL,
     DEFAULT_WORKSPACE,
     _FALLBACK_MODELS,
@@ -726,6 +727,7 @@ def _status_from_runtime(cfg: dict, imports_ok: bool) -> dict:
 
     provider_configured = bool(provider and model)
     provider_ready = False
+    custom_bundle = None
 
     if provider_configured:
         meta = _SUPPORTED_PROVIDER_SETUPS.get(provider, {})
@@ -733,13 +735,13 @@ def _status_from_runtime(cfg: dict, imports_ok: bool) -> dict:
             # Share the routing resolver: named records can be keyless, but a
             # declared credential that failed to resolve is still incomplete.
             try:
-                bundle = resolve_custom_provider_bundle(provider)
+                custom_bundle = resolve_custom_provider_bundle(provider)
             except AmbiguousCustomProviderError:
-                bundle = None
-            if bundle:
-                base_url = _normalize_base_url(str(bundle.get("base_url") or ""))
+                custom_bundle = None
+            if custom_bundle:
+                base_url = _normalize_base_url(str(custom_bundle.get("base_url") or ""))
                 provider_ready = bool(
-                    base_url and (bundle.get("api_key") or bundle.get("keyless"))
+                    base_url and (custom_bundle.get("api_key") or custom_bundle.get("keyless"))
                 )
         elif provider in _SUPPORTED_PROVIDER_SETUPS:
             # key_optional providers (lmstudio, ollama, custom) are ready as
@@ -797,7 +799,16 @@ def _status_from_runtime(cfg: dict, imports_ok: bool) -> dict:
         note = f"Hermes is minimally configured and ready to chat via {provider_name}."
     elif provider_configured:
         state = "provider_incomplete"
-        if (provider == "custom" or provider.startswith("custom:")) and not base_url:
+        if provider.startswith("custom:") and (
+            custom_bundle is None or custom_bundle.get("status") in CUSTOM_SELECTION_UNOWNED
+        ):
+            note_key = "onboarding_notice_custom_record_required"
+            note_args = [provider]
+            note = (
+                f"Provider '{provider}' has no unique enabled custom configuration. "
+                "Check its name, enabled state, and duplicate entries in config.yaml."
+            )
+        elif (provider == "custom" or provider.startswith("custom:")) and not base_url:
             note_key = "onboarding_notice_custom_base_url_required"
             note = (
                 "Hermes has a saved provider/model selection, but the custom "
