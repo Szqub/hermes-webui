@@ -166,11 +166,10 @@ commands and marks which are already fixed. The open ones in short:
   open. State what is verified and what is not.
 - Author and signatory on every commit, PR, issue and comment is **Szqub** only.
   No mention of AI, agents or assistants anywhere.
-- **Open decision, do not guess:** `docs/CONTRACTS.md` asks the PR body for a
-  `Model Used` disclosure, and `pr-webui-body-v4.md` carries the section header
-  with a bracketed note instead of a value. The standing rule is that only Szqub
-  is the author and signatory, so this is Szqub's call alone. Leave the note in
-  place and raise it; do not fill it in and do not remove the section.
+- **AI disclosure:** `docs/CONTRACTS.md` asks the PR body for a `Model Used`
+  section. It is filled with exactly `AI Assisted Multiple Models, Human
+  Authored.` — this is the ONE place an AI mention is allowed. Everywhere else
+  (commit authors, other PR text, issues, comments) only Szqub appears.
 
 ## Second PR
 

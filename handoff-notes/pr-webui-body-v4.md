@@ -187,6 +187,4 @@ real encoder and resolver:
 
 ## Model Used
 
-[NEEDS SZQUB'S DECISION — see the note sent with this draft. The repository
-checklist asks for a disclosure here; the standing rule is that only Szqub is
-the author and signatory. Nothing has been written into this section.]
+AI Assisted Multiple Models, Human Authored.
