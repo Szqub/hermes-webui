@@ -108,6 +108,8 @@ Existing named custom providers (`custom:<name>`) use their configured endpoint
 for readiness checks too. Keyless endpoints are ready with a base URL and model.
 Credential references in `key_env` (or `api_key_env` under `providers:`) resolve
 in the active profile; an unresolved credential is not treated as keyless.
+Onboarding status reads these references from the requested named profile's
+`.env`; credentials present only in the server process do not make it ready.
 Provider credential checks use the same named record as chat routing, including
 legacy `custom_providers` entries.
 Missing, disabled, or ambiguous named records are reported as configuration

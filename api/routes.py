@@ -14784,7 +14784,10 @@ def handle_get(handler, parsed) -> bool:
         )
 
     if parsed.path == "/api/onboarding/status":
-        return j(handler, get_onboarding_status())
+        # Bind the request profile before any status config or credential reads.
+        from api.profiles import profile_env_for_active_request_readonly
+        with profile_env_for_active_request_readonly("/api/onboarding/status", logger_override=logger):
+            return j(handler, get_onboarding_status())
 
     if parsed.path == "/api/extensions/status":
         from api.extensions import get_extension_status
