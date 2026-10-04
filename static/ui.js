@@ -3183,10 +3183,21 @@ function _parseModelRoute(modelId, providerId){
     try{provider=decodeURIComponent(token);}catch(_){}
     return {provider:provider.trim().toLowerCase(),model:value.slice(colon+1)};
   }
-  // Legacy @custom: values keep the parser rule Python applies to the same
-  // bytes — one slug segment, or host:port — BEFORE any caller hint. A hint
-  // must never re-read a colon-bearing suffix as the configured lane: the two
-  // languages would then disagree about which endpoint the stored value names.
+  // A caller that knows which lane listed the value (the option's own
+  // data-provider, or the group it was rendered under) must be able to say so:
+  // an exact hint prefix decides before the legacy split. The catalog sets
+  // data-provider to the group, so a plain Custom-lane option is
+  // `@custom:<model>` in group `custom` and the whole remainder is the model id
+  // — splitting there instead reads a colon-bearing id as a record name and
+  // sends a truncated id to a nonexistent provider (#7955).
+  const hint=String(providerId||'').trim().toLowerCase();
+  const prefix=hint?`@${hint}:`:'';
+  if(prefix&&value.toLowerCase().startsWith(prefix)){
+    return {provider:hint,model:value.slice(prefix.length)};
+  }
+  // With no hint, @custom: values keep the parser rule Python applies to the
+  // same bytes — one slug segment, or host:port. Both languages must agree
+  // about which record an unhinted stored value names.
   if(value.startsWith('@custom:')){
     const rest=value.slice('@custom:'.length);
     const parts=rest.split(':');
@@ -3201,11 +3212,6 @@ function _parseModelRoute(modelId, providerId){
     return splitAt<0
       ? {provider:'custom',model:rest}
       : {provider:('custom:'+rest.slice(0,splitAt)).toLowerCase(),model:rest.slice(splitAt+1)};
-  }
-  const hint=String(providerId||'').trim().toLowerCase();
-  const prefix=hint?`@${hint}:`:'';
-  if(prefix&&value.toLowerCase().startsWith(prefix)){
-    return {provider:hint,model:value.slice(prefix.length)};
   }
   return {provider:token.toLowerCase(),model:value.slice(colon+1)};
 }
