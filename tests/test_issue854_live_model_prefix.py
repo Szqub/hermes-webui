@@ -33,10 +33,14 @@ class TestLiveModelPrefix:
         # as a guard — slash-prefixed IDs from portal providers also need
         # the prefix.
         prefix_block = re.search(
-            r"if\s*\(\s*[^)]*!mid\.startsWith\(['\"]@['\"]\)[^)]*\)\s*\{\s*mid\s*=\s*`@",
+            r"if\s*\(\s*[^)]*!mid\.startsWith\(['\"]@['\"]\)[^)]*\)\s*\{\s*mid\s*=\s*"
+            r"(?:`@|_encodeModelRoute\(|typeof\s+_encodeModelRoute)",
             fn,
         )
         assert prefix_block, "@provider: prefix application not found"
+        # The block must prefix when portal-fetch is true and not already @-prefixed,
+        # either inline or through the shared route encoder (which escapes the
+        # provider segment so the reserved lane stays unreachable).
         # The block must prefix when portal-fetch is true and not already @-prefixed.
         # It must NOT check for slash presence — that's the bug.
         assert "!mid.includes('/')" not in prefix_block.group(0), (

@@ -4609,6 +4609,30 @@ def _custom_provider_runtime_bundle_with_provenance(
 
     lookup = lookup_provider or resolved_provider
     if not (isinstance(lookup, str) and lookup.startswith("custom:")):
+        # The plain Custom lane (the reserved ``@!:`` route) takes its endpoint
+        # from the configured ``model.base_url``. A runtime dict that resolved a
+        # DIFFERENT endpoint is a different authority, so its credential must not
+        # be paired with this endpoint — that is how one host's key reached
+        # another host. A runtime dict pointing at the SAME endpoint is
+        # same-authority and keeps its key, which is the ordinary case where the
+        # lane's own record declares both the URL and the credential.
+        if (
+            isinstance(lookup, str)
+            and lookup.strip().lower() == "custom"
+            and resolved_base_url
+            and isinstance(_rt, dict)
+            and _rt.get("base_url")
+            and not _same_endpoint_origin(_rt.get("base_url"), resolved_base_url)
+        ):
+            logger.warning(
+                "plain custom lane resolved %s but the runtime credential belongs "
+                "to %s; refusing to pair that credential with this endpoint",
+                resolved_base_url,
+                _rt.get("base_url"),
+            )
+            bundle["api_key"] = None
+            for field in CUSTOM_CONNECTION_SIDE_FIELDS:
+                bundle[field] = None
         return bundle, None
 
     custom = resolve_custom_provider_bundle(lookup, connection_resolver=connection_resolver)
