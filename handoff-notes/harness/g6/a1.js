@@ -1,0 +1,41 @@
+(()=>{
+function mk(groups){const sel=new Element('select');for(const [prov,vals] of groups){const g=sel.appendChild(new Element('optgroup'));g.dataset.provider=prov;for(const v of vals){const o=g.appendChild(new Element('option'));o.value=v;o.dataset.provider=prov;}}return sel;}
+const out={};
+let sel=mk([['ollama',['llama3']],['custom',['@custom:qwen3:8b','@custom:a/b:c']]]);
+sel.value='@custom:qwen3:8b';
+const st=_modelStateForSelect(sel,sel.value);
+out.state=st;
+sel.value='llama3';
+out.find=_findModelInDropdown(st.model,sel,st.model_provider);
+out.ensure=_ensureModelOptionInDropdown(st.model,sel,st.model_provider);
+out.opts=sel.options.map(o=>[o.value,o.dataset.provider]);
+out.after=_modelStateForSelect(sel,sel.value);
+sel=mk([['custom',['@custom:a/b:c']]]);
+const st2=_modelStateForSelect(sel,'@custom:a/b:c');out.state2=st2;
+out.find2=_findModelInDropdown(st2.model,sel,st2.model_provider);
+sel=mk([['custom',['@custom:mistral-7b']]]);
+out.find3=_findModelInDropdown('mistral-7b',sel,'custom');
+sel=mk([['custom',['@custom:qwen3:8b']],['custom:qwen3',['@custom:qwen3:8b']]]);
+out.collide=sel.options.map(o=>_modelStateForSelect(sel,o.value));
+sel=mk([['custom',['@!:8b']],['custom:qwen3',['@custom:qwen3:8b']]]);
+out.q1=_findModelInDropdown('@custom:qwen3:8b',sel,'custom');
+sel=mk([['custom:qwen3',['@!:8b']]]);
+out.q2=_findModelInDropdown('@!:8b',sel,'custom:qwen3');
+sel=mk([['custom',['@!:qwen3:8b']],['custom:qwen3',['@custom:qwen3:8b']]]);
+out.q3=_findModelInDropdown('@!:qwen3:8b',sel,'custom:qwen3');
+out.q4=_findModelInDropdown('@custom:qwen3:8b',sel,'custom');
+sel=mk([['custom',['@!:gpt-4o']],['safe',['@safe:gpt-4o']]]);
+out.q5=_findModelInDropdown('@safe:gpt-4o',sel,'custom');
+out.q6=_findModelInDropdown('@!:gpt-4o',sel,'safe');
+sel=mk([['custom',['@!:x:y']],['custom:east:west',['@custom%3Aeast%3Awest:x:y']]]);
+out.q7=_findModelInDropdown('@custom%3Aeast%3Awest:x:y',sel,'custom');
+out.q8=_findModelInDropdown('@!:x:y',sel,'custom:east:west');
+sel=mk([['custom:qwen3',['@custom:qwen3:8b']]]);
+out.q9=_findModelInDropdown('8b',sel,'custom');
+sel=mk([['safe',['@safe:a:b']],['custom:backup',['@custom:backup:m:free']]]);
+out.s=sel.options.map(o=>_modelStateForSelect(sel,o.value));
+sel=mk([]);out.i1=_ensureModelOptionInDropdown('@custom:mistral',sel,null);out.i1s=_modelStateForSelect(sel,sel.value);
+sel=mk([]);out.i2=_ensureModelOptionInDropdown('@custom:mistral',sel,'custom:qwen3');out.i2s=_modelStateForSelect(sel,sel.value);
+sel=mk([]);out.i3=_ensureModelOptionInDropdown('@!:a:b',sel,'custom:qwen3');out.i3s=_modelStateForSelect(sel,sel.value);
+sel=mk([]);out.i4=_ensureModelOptionInDropdown('@safe:a:b',sel,'custom');out.i4s=_modelStateForSelect(sel,sel.value);
+return out;})()

@@ -1,0 +1,1 @@
+That's the completion notification for the repo B relay-suite comparison I already read and reported (parent: 7 failed / 35 passed; head: identical). Verdicts stand: both commits PASS, nothing further to do.

@@ -1,0 +1,481 @@
+{
+ "alias": {
+  "ollama": "custom",
+  "vllm": "custom",
+  "lmstudio": "lmstudio",
+  "lm-studio": "lmstudio",
+  "llamacpp": "llamacpp",
+  "llama-cpp": "llama-cpp",
+  "local": "custom",
+  "custom": "custom"
+ },
+ "lmstudio providers.custom@OTHER": {
+  "reserved": true,
+  "active": "lmstudio",
+  "groups": {
+   "lmstudio": [
+    "llama3"
+   ],
+   "custom": [
+    "@!:mistral",
+    "@!:qwen3:8b"
+   ]
+  },
+  "resolve": {
+   "custom|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|@!:qwen3:8b": [
+    "qwen3:8b",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|@custom:mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ],
+   "raw|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ]
+  }
+ },
+ "lmstudio cp unnamed@OTHER": {
+  "reserved": true,
+  "active": "lmstudio",
+  "groups": {
+   "lmstudio": [
+    "llama3"
+   ],
+   "custom": [
+    "@!:mistral",
+    "@!:qwen3:8b"
+   ]
+  },
+  "resolve": {
+   "custom|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|@!:qwen3:8b": [
+    "qwen3:8b",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|@custom:mistral": [
+    "mistral",
+    "custom",
+    null
+   ],
+   "raw|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|mistral": [
+    "mistral",
+    "lmstudio",
+    "http://127.0.0.1:11434/v1"
+   ]
+  }
+ },
+ "vllm providers.custom@OTHER": {
+  "reserved": true,
+  "active": "custom",
+  "groups": {
+   "custom": [
+    "llama3",
+    "mistral",
+    "qwen3:8b"
+   ]
+  },
+  "resolve": {
+   "custom|llama3": [
+    "llama3",
+    "vllm",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ],
+   "custom|qwen3:8b": [
+    "qwen3:8b",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ],
+   "raw|@custom:mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ],
+   "raw|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ]
+  }
+ },
+ "vllm cp unnamed@OTHER": {
+  "reserved": true,
+  "active": "custom",
+  "groups": {
+   "custom": [
+    "mistral",
+    "qwen3:8b",
+    "llama3"
+   ]
+  },
+  "resolve": {
+   "custom|mistral": [
+    "mistral",
+    "vllm",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|qwen3:8b": [
+    "qwen3:8b",
+    "vllm",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|llama3": [
+    "llama3",
+    "vllm",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|@custom:mistral": [
+    "mistral",
+    "custom",
+    null
+   ],
+   "raw|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|mistral": [
+    "mistral",
+    "vllm",
+    "http://127.0.0.1:11434/v1"
+   ]
+  }
+ },
+ "llamacpp providers.custom@OTHER": {
+  "reserved": true,
+  "active": "llamacpp",
+  "groups": {
+   "llamacpp": [
+    "llama3"
+   ],
+   "custom": [
+    "@!:mistral",
+    "@!:qwen3:8b"
+   ]
+  },
+  "resolve": {
+   "custom|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|@!:qwen3:8b": [
+    "qwen3:8b",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|@custom:mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ],
+   "raw|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ]
+  }
+ },
+ "llamacpp cp unnamed@OTHER": {
+  "reserved": true,
+  "active": "llamacpp",
+  "groups": {
+   "llamacpp": [
+    "llama3"
+   ],
+   "custom": [
+    "@!:mistral",
+    "@!:qwen3:8b"
+   ]
+  },
+  "resolve": {
+   "custom|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|@!:qwen3:8b": [
+    "qwen3:8b",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|@custom:mistral": [
+    "mistral",
+    "custom",
+    null
+   ],
+   "raw|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|mistral": [
+    "mistral",
+    "llamacpp",
+    "http://127.0.0.1:11434/v1"
+   ]
+  }
+ },
+ "ollama providers.custom@OTHER": {
+  "reserved": true,
+  "active": "custom",
+  "groups": {
+   "custom": [
+    "llama3",
+    "mistral",
+    "qwen3:8b"
+   ]
+  },
+  "resolve": {
+   "custom|llama3": [
+    "llama3",
+    "ollama",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ],
+   "custom|qwen3:8b": [
+    "qwen3:8b",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ],
+   "raw|@custom:mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ],
+   "raw|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ]
+  }
+ },
+ "ollama cp unnamed@OTHER": {
+  "reserved": true,
+  "active": "custom",
+  "groups": {
+   "custom": [
+    "mistral",
+    "qwen3:8b",
+    "llama3"
+   ]
+  },
+  "resolve": {
+   "custom|mistral": [
+    "mistral",
+    "ollama",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|qwen3:8b": [
+    "qwen3:8b",
+    "ollama",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|llama3": [
+    "llama3",
+    "ollama",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|@custom:mistral": [
+    "mistral",
+    "custom",
+    null
+   ],
+   "raw|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|mistral": [
+    "mistral",
+    "ollama",
+    "http://127.0.0.1:11434/v1"
+   ]
+  }
+ },
+ "local providers.custom@OTHER": {
+  "reserved": true,
+  "active": "custom",
+  "groups": {
+   "custom": [
+    "llama3",
+    "mistral",
+    "qwen3:8b"
+   ]
+  },
+  "resolve": {
+   "custom|llama3": [
+    "llama3",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ],
+   "custom|qwen3:8b": [
+    "qwen3:8b",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ],
+   "raw|@custom:mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ],
+   "raw|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|mistral": [
+    "mistral",
+    "custom",
+    "http://gpu-box:8000/v1"
+   ]
+  }
+ },
+ "local cp unnamed@OTHER": {
+  "reserved": true,
+  "active": "custom",
+  "groups": {
+   "custom": [
+    "mistral",
+    "qwen3:8b",
+    "llama3"
+   ]
+  },
+  "resolve": {
+   "custom|mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|qwen3:8b": [
+    "qwen3:8b",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "custom|llama3": [
+    "llama3",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|@custom:mistral": [
+    "mistral",
+    "custom",
+    null
+   ],
+   "raw|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ]
+  }
+ },
+ "dedup ollama + anthropic same id": {
+  "reserved": true,
+  "active": "custom",
+  "groups": {
+   "custom": [
+    "qwen3:8b",
+    "claude-x"
+   ],
+   "anthropic": [
+    "@anthropic:claude-x",
+    "@anthropic:qwen3:8b"
+   ]
+  },
+  "resolve": {
+   "custom|qwen3:8b": [
+    "qwen3:8b",
+    "anthropic",
+    null
+   ],
+   "custom|claude-x": [
+    "claude-x",
+    "ollama",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "anthropic|@anthropic:claude-x": [
+    "claude-x",
+    "anthropic",
+    null
+   ],
+   "anthropic|@anthropic:qwen3:8b": [
+    "qwen3:8b",
+    "anthropic",
+    null
+   ],
+   "raw|@custom:mistral": [
+    "mistral",
+    "custom",
+    null
+   ],
+   "raw|@!:mistral": [
+    "mistral",
+    "custom",
+    "http://127.0.0.1:11434/v1"
+   ],
+   "raw|mistral": [
+    "mistral",
+    "ollama",
+    "http://127.0.0.1:11434/v1"
+   ]
+  }
+ }
+}

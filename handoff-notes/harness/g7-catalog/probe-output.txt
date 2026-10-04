@@ -1,0 +1,90 @@
+Running 22 items in this shard
+
+model_custom: reserved_predicate=False catalog='@custom:qwen3:8b' resolves=('8b', 'custom:qwen3', None) reserved_resolves=('qwen3:8b', 'custom', 'http://127.0.0.1:11434/v1') reencoded='@custom:qwen3:8b' session='qwen3:8b' session_resolves=('qwen3:8b', 'custom', 'http://127.0.0.1:11434/v1')
+.
+model_custom_record_custom: reserved_predicate=False catalog='@custom:qwen3:8b' resolves=('8b', 'custom:qwen3', None) reserved_resolves=('qwen3:8b', 'custom', 'http://127.0.0.1:11434/v1') reencoded='@custom:qwen3:8b' session='qwen3:8b' session_resolves=('qwen3:8b', 'custom', 'http://record.invalid:9999/v1')
+.
+ollama_record_custom: reserved_predicate=True catalog='@!:qwen3:8b' resolves=('qwen3:8b', 'custom', 'http://127.0.0.1:11434/v1') reserved_resolves=('qwen3:8b', 'custom', 'http://127.0.0.1:11434/v1') reencoded='@!:qwen3:8b' session='@!:qwen3:8b' session_resolves=('qwen3:8b', 'custom', 'http://127.0.0.1:11434/v1')
+.
+no_model_base_record_custom: reserved_predicate=False catalog='@custom:qwen3:8b' resolves=('8b', 'custom:qwen3', None) reserved_resolves='ValueError: Configured Custom endpoint is not available' reencoded='unavailable' session='qwen3:8b' session_resolves=('qwen3:8b', 'custom', 'http://record.invalid:9999/v1')
+.
+no_model_base_no_record: reserved_predicate=False catalog='@custom:qwen3:8b' resolves=('8b', 'custom:qwen3', None) reserved_resolves='ValueError: Configured Custom endpoint is not available' reencoded='unavailable' session='qwen3:8b' session_resolves=('qwen3:8b', 'custom', None)
+.
+active_named: reserved_predicate=False catalog='@custom:qwen3:8b' resolves=('8b', 'custom:qwen3', None) reserved_resolves='ValueError: Configured Custom endpoint is not available' reencoded='unavailable' session='@custom:qwen3:8b' session_resolves=('8b', 'custom:qwen3', None)
+.
+entry_named_custom: reserved_predicate=True catalog='@!:qwen3:8b' resolves=('qwen3:8b', 'custom', 'http://127.0.0.1:11434/v1') reserved_resolves=('qwen3:8b', 'custom', 'http://127.0.0.1:11434/v1') reencoded='@!:qwen3:8b' session='@!:qwen3:8b' session_resolves=('qwen3:8b', 'custom', 'http://127.0.0.1:11434/v1')
+named-entry-control: provider='custom:custom' wire='@custom:custom:qwen3:8b' resolves=('qwen3:8b', 'custom:custom', 'http://record.invalid:9999/v1')
+.
+model_custom_entry_named_custom: reserved_predicate=False catalog='@custom:qwen3:8b' resolves=('8b', 'custom:qwen3', None) reserved_resolves=('qwen3:8b', 'custom', 'http://127.0.0.1:11434/v1') reencoded='@custom:qwen3:8b' session='qwen3:8b' session_resolves=('qwen3:8b', 'custom:custom', 'http://record.invalid:9999/v1')
+.
+nonlocal_active: reserved_predicate=False catalog='@custom:qwen3:8b' resolves=('8b', 'custom:qwen3', None) reserved_resolves=('qwen3:8b', 'custom', 'http://127.0.0.1:11434/v1') reencoded='@custom:qwen3:8b' session='@custom:qwen3:8b' session_resolves=('8b', 'custom:qwen3', None)
+.
+named_local_active: reserved_predicate=False catalog='@custom:qwen3:8b' resolves=('8b', 'custom:qwen3', None) reserved_resolves='ValueError: Configured Custom endpoint is not available' reencoded='unavailable' session='@!:qwen3:8b' session_resolves='ValueError: Configured Custom endpoint is not available'
+.FFF
+static-catalog active='ollama' mid='mistral-7b': [('custom', 'mistral-7b', ('mistral-7b', 'custom', 'http://record.invalid:9999/v1'))]
+.
+static-catalog active='custom' mid='mistral-7b': [('custom', 'mistral-7b', ('mistral-7b', 'custom', 'http://record.invalid:9999/v1'))]
+.
+static-catalog active='custom:lab' mid='mistral-7b': [('custom', '@custom:mistral-7b', ('mistral-7b', 'custom', 'http://record.invalid:9999/v1'))]
+.
+static-catalog active='ollama' mid='qwen3:8b': [('custom', 'qwen3:8b', ('qwen3:8b', 'custom', 'http://record.invalid:9999/v1'))]
+.
+static-catalog active='custom' mid='qwen3:8b': [('custom', 'qwen3:8b', ('qwen3:8b', 'custom', 'http://record.invalid:9999/v1'))]
+.
+static-catalog active='custom:lab' mid='qwen3:8b': [('custom', '@custom:qwen3:8b', ('8b', 'custom:qwen3', None))]
+.F
+real-collision with_base=True: [('custom', '@!:vendor/qwen3:8b', ('vendor/qwen3:8b', 'custom', 'http://127.0.0.1:11434/v1')), ('aaa', 'vendor/qwen3:8b', ('vendor/qwen3:8b', 'aaa', 'http://aaa.invalid/v1'))]
+F
+real-collision with_base=False: [('custom', '@custom:vendor/qwen3:8b', ('8b', 'custom:vendor/qwen3', None)), ('aaa', 'vendor/qwen3:8b', ('vendor/qwen3:8b', 'aaa', 'http://aaa.invalid/v1'))]
+F
+=================================== FAILURES ===================================
+_______________ test_configured_custom_catalog_should_roundtrip ________________
+../g7-catalog/test_catalog_review.py:58: in test_configured_custom_catalog_should_roundtrip
+    assert config.resolve_model_provider(config._encode_catalog_route(MID, 'custom')) == (MID, 'custom', BASE)
+E   AssertionError: assert ('8b', 'custom:qwen3', None) == ('qwen3:8b', ...0.1:11434/v1')
+E     
+E     At index 0 diff: '8b' != 'qwen3:8b'
+E     Use -v to get more diff
+________________ test_generic_custom_record_should_keep_record _________________
+../g7-catalog/test_catalog_review.py:63: in test_generic_custom_record_should_keep_record
+    assert config.resolve_model_provider(config._encode_catalog_route(MID, 'custom')) == (MID, 'custom', OTHER)
+E   AssertionError: assert ('qwen3:8b', ...0.1:11434/v1') == ('qwen3:8b', ...alid:9999/v1')
+E     
+E     At index 2 diff: 'http://127.0.0.1:11434/v1' != 'http://record.invalid:9999/v1'
+E     Use -v to get more diff
+__________ test_catalog_predicate_should_agree_with_reserved_resolver __________
+../g7-catalog/test_catalog_review.py:69: in test_catalog_predicate_should_agree_with_reserved_resolver
+    assert config._encode_catalog_route(result[0], result[1]) == '@!:' + MID
+E   AssertionError: assert '@custom:qwen3:8b' == '@!:qwen3:8b'
+E     
+E     - @!:qwen3:8b
+E     + @custom:qwen3:8b
+_____________ test_plain_generic_custom_record_should_keep_record ______________
+../g7-catalog/test_catalog_review.py:90: in test_plain_generic_custom_record_should_keep_record
+    assert config.resolve_model_provider(wire) == ('mistral-7b', 'custom', OTHER)
+E   AssertionError: assert ('mistral-7b'...0.1:11434/v1') == ('mistral-7b'...alid:9999/v1')
+E     
+E     At index 2 diff: 'http://127.0.0.1:11434/v1' != 'http://record.invalid:9999/v1'
+E     Use -v to get more diff
+___________________ test_real_catalog_record_collision[True] ___________________
+../g7-catalog/test_catalog_review.py:107: in test_real_catalog_record_collision
+    assert config.resolve_model_provider(option) == (mid, 'custom', OTHER)
+E   AssertionError: assert ('vendor/qwen...0.1:11434/v1') == ('vendor/qwen...alid:9999/v1')
+E     
+E     At index 2 diff: 'http://127.0.0.1:11434/v1' != 'http://record.invalid:9999/v1'
+E     Use -v to get more diff
+__________________ test_real_catalog_record_collision[False] ___________________
+../g7-catalog/test_catalog_review.py:107: in test_real_catalog_record_collision
+    assert config.resolve_model_provider(option) == (mid, 'custom', OTHER)
+E   AssertionError: assert ('8b', 'custo.../qwen3', None) == ('vendor/qwen...alid:9999/v1')
+E     
+E     At index 0 diff: '8b' != 'vendor/qwen3:8b'
+E     Use -v to get more diff
+=========================== short test summary info ============================
+FAILED ../g7-catalog/test_catalog_review.py::test_configured_custom_catalog_should_roundtrip
+FAILED ../g7-catalog/test_catalog_review.py::test_generic_custom_record_should_keep_record
+FAILED ../g7-catalog/test_catalog_review.py::test_catalog_predicate_should_agree_with_reserved_resolver
+FAILED ../g7-catalog/test_catalog_review.py::test_plain_generic_custom_record_should_keep_record
+FAILED ../g7-catalog/test_catalog_review.py::test_real_catalog_record_collision[True]
+FAILED ../g7-catalog/test_catalog_review.py::test_real_catalog_record_collision[False]
+6 failed, 16 passed in 1.76s

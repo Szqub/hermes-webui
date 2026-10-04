@@ -1,0 +1,21 @@
+Running 1 items in this shard
+actual opaque alias qualified model: [{"value": "@model-alias-canonical:@!:qwen3:8b", "provider": "model-alias-canonical"}]
+alias qualified object: [{"value": "@!:@!:qwen3:8b", "provider": "custom"}, {"value": "@custom%3Aeast%3Awest:@custom%3Aeast%3Awest:qwen3:8b", "provider": "custom:east:west"}]
+profile conflicting hint: ('qwen3:8b', 'custom:backup')
+profile persisted config: "model:\n  default: qwen3:8b\n  provider: custom:backup\n"
+reserved custom badge on named option: {"qwen3:8b": {"role": "fallback", "label": "Fallback 1", "provider": "custom"}, "@custom:qwen3:8b": {"role": "fallback", "label": "Fallback 1", "provider": "custom"}}
+legacy scalar alias absent configured option: [{"value": "@custom:qwen3:8b", "provider": "custom"}]
+python resolver alias fallback: ('8b', 'custom:qwen3', None)
+unicode port parser python: ('qwen3:8b', 'custom:localhost:１２３')
+unicode port parser JS: [{"provider": "custom:localhost", "model": "\uff11\uff12\uff13:qwen3:8b"}]
+restore conflicting option metadata: [{"matched": "@custom:qwen3:8b", "state": {"model": "8b", "model_provider": "custom:qwen3"}}, {"matched": "@other:8b", "state": {"model": "@other:8b", "model_provider": "other"}}]
+dedup same group different wire providers: {"removed": 1, "values": ["@!:8b"]}
+configured custom helper: False
+configured custom catalog: [{'id': '@custom:qwen3:8b'}]
+configured custom explicit resolve: ('qwen3:8b', 'custom', 'http://configured:11434/v1')
+slash catalog: [{'id': 'vendor/qwen3:8b'}]
+active custom catalog: [{'id': 'qwen3:8b'}]
+live configured custom: [{"value": "qwen3:8b", "state": {"model": "qwen3:8b", "model_provider": "custom"}}]
+seed twice named prefix: {"custom:lab": [{"id": "@custom:lab:old", "label": "old"}, {"id": "@custom:lab:old", "label": "OLD"}, {"id": "@custom:lab:new", "label": "NEW"}, {"id": "@custom:lab:old", "label": "OLD"}, {"id": "@custom:lab:new", "label": "NEW"}]}
+.
+1 passed in 2.05s
