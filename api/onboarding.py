@@ -913,10 +913,13 @@ def _build_setup_catalog(cfg: dict) -> dict:
     }
 
 
-def get_onboarding_status() -> dict:
+def get_onboarding_status(*, import_status: tuple | None = None) -> dict:
+    # Route callers check process-level imports before binding profile state.
+    if import_status is None:
+        import_status = verify_hermes_imports()
     settings = load_settings()
     cfg = get_config()
-    imports_ok, missing, errors = verify_hermes_imports()
+    imports_ok, missing, errors = import_status
     runtime = _status_from_runtime(cfg, imports_ok)
     workspaces = load_workspaces()
     last_workspace = get_last_workspace()

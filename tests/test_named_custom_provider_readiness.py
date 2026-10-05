@@ -83,3 +83,38 @@ def test_unavailable_named_endpoint_stays_unready(custom_config, case):
         assert status["provider_note_key"] == "onboarding_notice_custom_base_url_required"
     else:
         assert status["provider_note_key"] == "onboarding_notice_custom_record_required"
+
+
+@pytest.mark.parametrize("shape", ["raw", "keyed", "model", "legacy", "generic"])
+@pytest.mark.parametrize("hint", ["alias", "blank_primary", "primary_wins"])
+@pytest.mark.parametrize("resolved", [False, True])
+def test_credential_alias_across_named_record_shapes(
+    custom_config, monkeypatch, shape, hint, resolved
+):
+    record = {
+        "base_url": "http://127.0.0.1:8000/v1",
+        "api_key_env": "ALIAS_TEST_KEY",
+    }
+    if hint == "blank_primary":
+        record["key_env"] = "  "
+    elif hint == "primary_wins":
+        record["key_env"] = "PRIMARY_TEST_KEY"
+    custom_config["providers"] = {}
+    if shape == "legacy":
+        custom_config["custom_providers"] = [{"name": "local", **record}]
+    elif shape == "model":
+        custom_config["model"].update(record)
+    else:
+        key = {"raw": "local", "keyed": "custom:local", "generic": "custom"}[shape]
+        custom_config["providers"][key] = record
+    selected_key = "PRIMARY_TEST_KEY" if hint == "primary_wins" else "ALIAS_TEST_KEY"
+    env = {selected_key: "fixture-value"} if resolved else {}
+    if hint == "primary_wins":
+        env["ALIAS_TEST_KEY"] = "unused-fixture-value"
+    monkeypatch.setattr(config._thread_ctx, "env", env)
+
+    bundle = config.resolve_custom_provider_bundle("custom:local")
+    assert bundle["keyless"] is False
+    assert bundle["api_key"] == ("fixture-value" if resolved else None)
+    assert providers._provider_has_key("custom:local") is resolved
+    assert onboarding._status_from_runtime(custom_config, imports_ok=True)["chat_ready"] is resolved

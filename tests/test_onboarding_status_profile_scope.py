@@ -3,7 +3,10 @@
 import io
 import json
 import os
-from types import SimpleNamespace
+import sys
+from contextvars import ContextVar
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock
 from urllib.parse import urlparse
 
@@ -229,3 +232,62 @@ def test_status_restores_scope_after_exception(
         assert status_profiles.keys == ["profile-placeholder"]
     else:
         assert seen == ["profile-placeholder"]
+
+
+@pytest.mark.parametrize(
+    "availability", ["available", "unavailable", "becomes_available"]
+)
+def test_status_imports_before_profile_binding(
+    status_profiles, monkeypatch, tmp_path, availability
+):
+    """Execute a real module import with an inert, context-observing Agent fixture."""
+    override = ContextVar("onboarding_test_home", default=None)
+    constants = ModuleType("hermes_constants")
+    constants.get_hermes_home = lambda: Path(
+        override.get() or os.environ["HERMES_HOME"]
+    )
+    constants.get_hermes_home_override = override.get
+    constants.set_hermes_home_override = override.set
+    constants.reset_hermes_home_override = override.reset
+    monkeypatch.setitem(sys.modules, "hermes_constants", constants)
+    probe = ModuleType("onboarding_import_probe")
+    probe.calls = []
+    probe.available = availability == "available"
+    monkeypatch.setitem(sys.modules, "onboarding_import_probe", probe)
+    monkeypatch.delitem(sys.modules, "run_agent", raising=False)
+    (tmp_path / "run_agent.py").write_text(
+        "from hermes_constants import get_hermes_home, get_hermes_home_override\n"
+        "import onboarding_import_probe as probe\n"
+        "probe.calls.append((get_hermes_home(), get_hermes_home_override()))\n"
+        "if not probe.available:\n"
+        "    raise ImportError('fixture agent unavailable')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    # Exercise the actual import checker, including failed-import retries.
+    checker = Mock(wraps=config.verify_hermes_imports)
+    monkeypatch.setattr(onboarding, "verify_hermes_imports", checker)
+    scoped_models = onboarding.get_available_models
+
+    def models():
+        assert override.get() == status_profiles.homes["work"]
+        return scoped_models()
+
+    monkeypatch.setattr(onboarding, "get_available_models", models)
+    before_env = dict(os.environ)
+    try:
+        for attempt in range(2):
+            if attempt and availability == "becomes_available":
+                probe.available = True
+            payload = request_status(status_profiles, "work")
+            assert payload["system"]["imports_ok"] is probe.available
+            assert override.get() is None
+            # Compare without rendering any inherited environment values.
+            assert bool(dict(os.environ) == before_env)
+        assert checker.call_count == 2  # Once per request, never again in scope.
+        expected_imports = 1 if availability == "available" else 2
+        assert (
+            probe.calls == [(status_profiles.homes["default"], None)] * expected_imports
+        )
+    finally:
+        sys.modules.pop("run_agent", None)
