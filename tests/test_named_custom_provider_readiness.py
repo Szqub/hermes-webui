@@ -12,6 +12,9 @@ def custom_config(monkeypatch, tmp_path):
         "providers": {"local": {"base_url": "http://127.0.0.1:8000/v1"}},
     }
     monkeypatch.setattr(config, "get_config", lambda: cfg)
+    # Rebinding cfg is the in-memory override shape _cfg_has_in_memory_overrides
+    # detects; without it the selector helpers re-read the real file on disk.
+    monkeypatch.setattr(config, "cfg", cfg)
     monkeypatch.setattr(providers, "get_config", lambda: cfg)
     monkeypatch.setattr(onboarding, "_HERMES_FOUND", True)
     monkeypatch.setattr(onboarding, "_get_active_hermes_home", lambda: tmp_path)
@@ -62,6 +65,72 @@ def test_legacy_named_endpoint_reads_key_env(custom_config, monkeypatch):
     monkeypatch.setattr(config._thread_ctx, "env", {"LOCAL_ENDPOINT_KEY": "profile-placeholder"})
     assert providers._get_provider_api_key("custom:local") == "profile-placeholder"
     assert providers._provider_has_key("custom:local") is True
+
+
+@pytest.mark.parametrize("placement", ["ambient_only", "profile_only", "conflicting"])
+def test_named_envref_credential_resolves_in_profile_scope(
+    custom_config, monkeypatch, placement
+):
+    """``api_key: ${VAR}`` resolves through the request scope's env ladder."""
+    custom_config["providers"]["local"]["api_key"] = "${LOCAL_ENDPOINT_KEY}"
+    if placement != "profile_only":
+        monkeypatch.setenv("LOCAL_ENDPOINT_KEY", "ambient-placeholder")
+    if placement != "ambient_only":
+        monkeypatch.setattr(
+            config._thread_ctx, "env", {"LOCAL_ENDPOINT_KEY": "profile-placeholder"}
+        )
+
+    expected = None if placement == "ambient_only" else "profile-placeholder"
+    assert config.resolve_custom_provider_connection("custom:local")[0] == expected
+    assert providers._get_configured_provider_api_key("custom:local") == expected
+    assert providers._provider_has_key("custom:local") is bool(expected)
+    status = onboarding._status_from_runtime(custom_config, imports_ok=True)
+    assert status["provider_ready"] is bool(expected)
+    assert status["chat_ready"] is bool(expected)
+
+
+def test_named_envref_uses_request_scope_over_process_cache(
+    monkeypatch, tmp_path
+):
+    """The selector must re-expand the raw file, not the process-pinned cache."""
+    import yaml
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".env").write_text("", encoding="utf-8")
+    (home / "config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "providers": {
+                    "local": {
+                        "base_url": "http://127.0.0.1:8000/v1",
+                        "api_key": "${LOCAL_ENDPOINT_KEY}",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    # Present only in the server process env — must not reach a blocked scope.
+    monkeypatch.setenv("LOCAL_ENDPOINT_KEY", "ambient-placeholder")
+    monkeypatch.delenv("CUSTOM_LOCAL_API_KEY", raising=False)
+    cache = {}
+    monkeypatch.setattr(config, "_cfg_cache", cache)
+    monkeypatch.setattr(config, "cfg", cache)
+    monkeypatch.setattr(config, "_cfg_path", None)
+    monkeypatch.setattr(config, "_cfg_mtime", 0.0)
+    monkeypatch.setattr(config, "_cfg_fingerprint", None)
+    monkeypatch.setattr(config, "_get_config_path", lambda: home / "config.yaml")
+    monkeypatch.setattr(config._thread_ctx, "env", {}, raising=False)
+    monkeypatch.setattr(
+        config._thread_ctx, "block_process_env_fallback", True, raising=False
+    )
+    monkeypatch.setattr(config, "_custom_record_pool_runtime", lambda *_: None)
+
+    assert config.resolve_custom_provider_connection("custom:local") == (
+        None,
+        "http://127.0.0.1:8000/v1",
+    )
 
 
 @pytest.mark.parametrize("case", ["missing", "disabled", "ambiguous", "no_endpoint"])

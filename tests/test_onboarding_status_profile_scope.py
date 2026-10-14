@@ -20,7 +20,7 @@ KEY = "ONBOARDING_SCOPE_TEST_KEY"
 PROVIDER = "custom:scope-local"
 
 
-@pytest.fixture(params=["key_env", "api_key_env"])
+@pytest.fixture(params=["key_env", "api_key_env", "api_key_envref"])
 def status_profiles(request, monkeypatch, tmp_path):
     root = tmp_path / "home"
     homes = {
@@ -28,6 +28,13 @@ def status_profiles(request, monkeypatch, tmp_path):
         "work": root / "profiles/work",
         "empty": root / "profiles/empty",
     }
+    provider_record = {"base_url": "http://127.0.0.1:8000/v1"}
+    if request.param == "api_key_envref":
+        # ``api_key: ${VAR}`` must expand in the request profile's env scope,
+        # never against the process-pinned get_config() cache.
+        provider_record["api_key"] = "${" + KEY + "}"
+    else:
+        provider_record[request.param] = KEY
     for home in homes.values():
         home.mkdir(parents=True, exist_ok=True)
         (home / ".env").write_text("", encoding="utf-8")
@@ -36,10 +43,7 @@ def status_profiles(request, monkeypatch, tmp_path):
                 {
                     "model": {"provider": PROVIDER, "default": "local-model"},
                     "providers": {
-                        "scope-local": {
-                            "base_url": "http://127.0.0.1:8000/v1",
-                            request.param: KEY,
-                        }
+                        "scope-local": provider_record,
                     },
                 }
             ),
@@ -203,6 +207,36 @@ def test_status_scope_does_not_leak_between_requests(status_profiles, monkeypatc
         "root-placeholder",
         "profile-placeholder",
     ]
+
+
+@pytest.mark.parametrize(
+    "profile,host_in",
+    [("work", "env_file"), ("default", "process_env"), (None, "process_env")],
+)
+def test_status_expands_custom_base_url_envref(
+    status_profiles, monkeypatch, profile, host_in
+):
+    """``base_url: ${VAR}`` expands in the reader's scope, not once globally."""
+    HOST = "ONBOARDING_SCOPE_TEST_BASE_HOST"
+    monkeypatch.delenv(HOST, raising=False)
+    for home in status_profiles.homes.values():
+        cfg_path = home / "config.yaml"
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        data["providers"]["scope-local"]["base_url"] = "${" + HOST + "}"
+        cfg_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    if host_in == "env_file":
+        expected = "http://127.0.0.1:9100/v1"
+        (status_profiles.homes["work"] / ".env").write_text(
+            f"{HOST}={expected}\n",
+            encoding="utf-8",
+        )
+    else:
+        expected = "http://127.0.0.1:9200/v1"
+        monkeypatch.setenv(HOST, expected)
+
+    payload = request_status(status_profiles, profile)
+
+    assert payload["system"]["current_base_url"] == expected
 
 
 @pytest.mark.parametrize(

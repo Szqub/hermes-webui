@@ -3903,6 +3903,27 @@ def _select_custom_provider_record(
     return None, "", False, CUSTOM_SELECTION_MISSING
 
 
+def _custom_provider_selection_config() -> dict:
+    """Config for selecting a named ``custom:<slug>`` record, scope-expanded.
+
+    ``get_config()`` returns the process-global ``_cfg_cache``, whose ``${VAR}``
+    references were expanded once against the PROCESS environment and pinned
+    there on purpose (#798). Selection consumes ``api_key``/``base_url`` fields
+    where that pin is wrong: inside a request's profile scope the record must
+    re-resolve ``${VAR}`` against ``_thread_ctx.env`` — and with
+    ``block_process_env_fallback`` set, an unset var must stay a ``${VAR}``
+    literal so ``_resolve_custom_record_key`` reports no credential instead of
+    leaking the process-env value (or shadowing the profile's own ``.env``).
+    When in-memory overrides exist — a rebound ``cfg``, a mutated ``_cfg_cache``,
+    or a monkeypatched ``get_config`` returning a foreign dict — that override
+    stays authoritative instead.
+    """
+    active = get_config()
+    if active is not _cfg_cache or _cfg_has_in_memory_overrides():
+        return active
+    return _load_yaml_config_file(_get_config_path())
+
+
 def resolve_custom_provider_connection(
     provider_id: str,
     *,
@@ -3936,8 +3957,12 @@ def resolve_custom_provider_connection(
         return None, None
 
     # Read the live config snapshot to avoid stale module-level cache edge
-    # cases after profile switches or runtime config edits.
-    record, _source, is_exact, _status = _select_custom_provider_record(pid, slug, get_config())
+    # cases after profile switches or runtime config edits. The snapshot must be
+    # scope-expanded: _cfg_cache pins ${VAR} to the process environment, which
+    # would mint (or shadow) credentials outside the request profile's .env.
+    record, _source, is_exact, _status = _select_custom_provider_record(
+        pid, slug, _custom_provider_selection_config()
+    )
     if record is None:
         # Nothing owns this slug. Returning ``(None, None)`` is the whole point:
         # an unknown named route must not inherit an unrelated row's endpoint or
@@ -4264,7 +4289,9 @@ def resolve_custom_provider_bundle(
             "owned": {},
         }
 
-    record, source, is_exact, status = _select_custom_provider_record(pid, slug, get_config())
+    record, source, is_exact, status = _select_custom_provider_record(
+        pid, slug, _custom_provider_selection_config()
+    )
     if record is None:
         return _unowned_custom_provider_bundle(pid, slug, status)
 

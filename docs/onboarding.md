@@ -132,10 +132,11 @@ before continuing.
 
 Existing named custom providers (`custom:<name>`) use their configured endpoint
 for readiness checks too. Keyless endpoints are ready with a base URL and model.
-Credential references in `key_env` or `api_key_env` resolve in the active
-profile across named `providers:`, `model:`, and legacy `custom_providers`
-records. A nonblank `key_env` takes precedence over `api_key_env`; an unresolved
-credential is not treated as keyless.
+Credential references in `key_env`, `api_key_env`, or an `api_key: ${VAR}`
+environment reference resolve in the active profile across named `providers:`,
+`model:`, and legacy `custom_providers` records. A nonblank `key_env` takes
+precedence over `api_key_env`; an unresolved credential is not treated as
+keyless.
 Onboarding status reads these references from the requested named profile's
 `.env`; credentials present only in the server process do not make it ready.
 Agent importability is checked before binding the request profile, since Agent
