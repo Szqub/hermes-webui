@@ -301,12 +301,16 @@ def test_blank_envref_credential_is_unresolved_not_keyless(shape_profiles, shape
     )
     assert shape_profiles.keys == [None]
 
+    previous_profile = getattr(profiles._tls, "profile", None)
     profiles.set_request_profile("work")
     try:
         with profiles.profile_env_for_active_request_readonly():
             bundle = config.resolve_custom_provider_bundle(PROVIDER)
     finally:
-        profiles.clear_request_profile()
+        if previous_profile is None:
+            profiles.clear_request_profile()
+        else:
+            profiles.set_request_profile(previous_profile)
     assert bundle["api_key"] is None
     assert bundle["keyless"] is False
 
