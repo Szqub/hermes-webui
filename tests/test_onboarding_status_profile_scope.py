@@ -22,12 +22,6 @@ PROVIDER = "custom:scope-local"
 
 @pytest.fixture(params=["key_env", "api_key_env", "api_key_envref"])
 def status_profiles(request, monkeypatch, tmp_path):
-    root = tmp_path / "home"
-    homes = {
-        "default": root,
-        "work": root / "profiles/work",
-        "empty": root / "profiles/empty",
-    }
     provider_record = {"base_url": "http://127.0.0.1:8000/v1"}
     if request.param == "api_key_envref":
         # ``api_key: ${VAR}`` must expand in the request profile's env scope,
@@ -35,6 +29,24 @@ def status_profiles(request, monkeypatch, tmp_path):
         provider_record["api_key"] = "${" + KEY + "}"
     else:
         provider_record[request.param] = KEY
+    return _setup_status_profiles(monkeypatch, tmp_path, provider_record)
+
+
+@pytest.fixture
+def shape_profiles(monkeypatch, tmp_path):
+    """Same server setup; each test writes its own record shape."""
+    return _setup_status_profiles(
+        monkeypatch, tmp_path, {"base_url": "http://127.0.0.1:8000/v1", "key_env": KEY}
+    )
+
+
+def _setup_status_profiles(monkeypatch, tmp_path, provider_record):
+    root = tmp_path / "home"
+    homes = {
+        "default": root,
+        "work": root / "profiles/work",
+        "empty": root / "profiles/empty",
+    }
     for home in homes.values():
         home.mkdir(parents=True, exist_ok=True)
         (home / ".env").write_text("", encoding="utf-8")
@@ -237,6 +249,127 @@ def test_status_expands_custom_base_url_envref(
     payload = request_status(status_profiles, profile)
 
     assert payload["system"]["current_base_url"] == expected
+
+
+SHAPES = ["raw", "keyed", "legacy"]
+
+
+def _write_record_shape(homes, shape, record):
+    """Write ``record`` as one of the three named-record shapes in every home."""
+    if shape == "raw":
+        extra = {"providers": {"scope-local": record}}
+    elif shape == "keyed":
+        extra = {"providers": {PROVIDER: record}}
+    else:
+        extra = {"custom_providers": [{"name": "scope-local", **record}]}
+    for home in homes.values():
+        data = {"model": {"provider": PROVIDER, "default": "local-model"}, **extra}
+        (home / "config.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+
+def _chat_merge(profile):
+    """The streaming worker's connection seam, as chat would resolve it."""
+    from api import streaming
+
+    ambient = os.environ.get(KEY)
+    bundle = streaming._resolve_runtime_connection_bundle(
+        PROVIDER, None, None, {}, profile_name=profile
+    )
+    assert os.environ.get(KEY) == ambient
+    return bundle
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_blank_envref_credential_is_unresolved_not_keyless(shape_profiles, shape):
+    """``api_key: ${KEY}`` blank in the profile is a declared credential that
+    did not resolve: not ready, and chat fails closed instead of sending the
+    keyless placeholder."""
+    _write_record_shape(
+        shape_profiles.homes,
+        shape,
+        {"base_url": "http://127.0.0.1:8000/v1", "api_key": "${" + KEY + "}"},
+    )
+    (shape_profiles.homes["work"] / ".env").write_text(f'{KEY}=" "\n', encoding="utf-8")
+
+    payload = request_status(shape_profiles, "work")
+
+    assert payload["system"]["provider_ready"] is False
+    assert payload["system"]["chat_ready"] is False
+    assert (
+        payload["system"]["provider_note_key"]
+        == "onboarding_notice_provider_auth_required"
+    )
+    assert shape_profiles.keys == [None]
+
+    profiles.set_request_profile("work")
+    try:
+        with profiles.profile_env_for_active_request_readonly():
+            bundle = config.resolve_custom_provider_bundle(PROVIDER)
+    finally:
+        profiles.clear_request_profile()
+    assert bundle["api_key"] is None
+    assert bundle["keyless"] is False
+
+    merged = _chat_merge("work")
+    assert merged["api_key"] != config.KEYLESS_CUSTOM_API_KEY
+    verdict = config.custom_provider_route_error(merged)
+    assert verdict and verdict["reason"] == config.CUSTOM_ROUTE_NO_CREDENTIAL
+
+
+@pytest.mark.parametrize("host_in", ["undefined", "process_env"])
+@pytest.mark.parametrize("shape", SHAPES)
+def test_unresolved_base_url_envref_is_no_endpoint(
+    shape_profiles, monkeypatch, shape, host_in
+):
+    """``base_url: ${HOST}`` that does not resolve in the profile is not an
+    endpoint: not ready with the base-URL prompt, and chat reports the missing
+    endpoint instead of handing the literal to the Agent."""
+    HOST = "ONBOARDING_SCOPE_TEST_BASE_HOST"
+    monkeypatch.delenv(HOST, raising=False)
+    if host_in == "process_env":
+        monkeypatch.setenv(HOST, "http://127.0.0.1:9200/v1")
+    _write_record_shape(
+        shape_profiles.homes, shape, {"base_url": "${" + HOST + "}", "key_env": KEY}
+    )
+    (shape_profiles.homes["work"] / ".env").write_text(
+        f"{KEY}=work-placeholder\n", encoding="utf-8"
+    )
+
+    payload = request_status(shape_profiles, "work")
+
+    assert payload["system"]["provider_ready"] is False
+    assert payload["system"]["chat_ready"] is False
+    assert payload["system"]["current_base_url"] is None
+    assert (
+        payload["system"]["provider_note_key"]
+        == "onboarding_notice_custom_base_url_required"
+    )
+
+    merged = _chat_merge("work")
+    assert "${" not in str(merged.get("base_url") or "")
+    verdict = config.custom_provider_route_error(merged)
+    assert verdict and verdict["reason"] == config.CUSTOM_ROUTE_NO_ENDPOINT
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_literal_record_still_routes_with_profile_key(shape_profiles, shape):
+    """Control: a literal endpoint with a profile key stays ready and routable."""
+    _write_record_shape(
+        shape_profiles.homes,
+        shape,
+        {"base_url": "http://127.0.0.1:8000/v1", "key_env": KEY},
+    )
+    (shape_profiles.homes["work"] / ".env").write_text(
+        f"{KEY}=work-placeholder\n", encoding="utf-8"
+    )
+
+    payload = request_status(shape_profiles, "work")
+    assert payload["system"]["chat_ready"] is True
+
+    merged = _chat_merge("work")
+    assert config.custom_provider_route_error(merged) is None
+    assert merged["api_key"] == "work-placeholder"
+    assert merged["base_url"] == "http://127.0.0.1:8000/v1"
 
 
 @pytest.mark.parametrize(

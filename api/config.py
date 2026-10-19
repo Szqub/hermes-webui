@@ -3496,6 +3496,23 @@ def _custom_record_base_url(record: object) -> str | None:
     return str(record.get("base_url") or "").strip() or None
 
 
+_UNRESOLVED_ENV_REF_RE = re.compile(r"\$\{[^}]+\}")
+
+
+def _custom_record_endpoint(record: object) -> str | None:
+    """A custom record's USABLE endpoint, or None.
+
+    Unlike :func:`_custom_record_base_url` (the declaration, used for record
+    ownership), a ``base_url`` still holding a ``${VAR}`` reference did not
+    resolve in the current scope and is not an endpoint: it must not report
+    ready or reach the Agent as a literal URL.
+    """
+    base_url = _custom_record_base_url(record)
+    if base_url and _UNRESOLVED_ENV_REF_RE.search(base_url):
+        return None
+    return base_url
+
+
 def _custom_record_key_env(record: dict) -> str:
     """Read either credential hint spelling, with nonblank key_env winning."""
     key_env = str(record.get("key_env") or "").strip()
@@ -4104,7 +4121,40 @@ def _custom_provider_selection_config() -> dict:
     active = get_config()
     if active is not _cfg_cache or _cfg_has_in_memory_overrides():
         return active
-    return _load_yaml_config_file(_get_config_path())
+    raw = _load_yaml_config_file_raw(_get_config_path(), _copy=False)
+    if not raw:
+        return {}
+    expanded = _expand_keeping_credential_declarations(raw)
+    return expanded if isinstance(expanded, dict) else {}
+
+
+def _expand_keeping_credential_declarations(obj):
+    """:func:`_expand_env_vars` that never expands a credential DECLARATION away.
+
+    ``api_key: ${KEY}`` with ``KEY`` blank in the profile expands to whitespace,
+    which :func:`_custom_record_declares_credential` would read as "no credential
+    declared" — turning an unresolved credential into a keyless endpoint and the
+    placeholder key. A nonblank raw ``api_key`` that expands to blank keeps its
+    raw form, so the declaration survives and :func:`_resolve_custom_record_key`
+    still resolves it in scope to no key.
+    """
+    if isinstance(obj, dict):
+        out = {}
+        for key, value in obj.items():
+            expanded = _expand_keeping_credential_declarations(value)
+            if (
+                key == "api_key"
+                and isinstance(value, str)
+                and value.strip()
+                and isinstance(expanded, str)
+                and not expanded.strip()
+            ):
+                expanded = value
+            out[key] = expanded
+        return out
+    if isinstance(obj, list):
+        return [_expand_keeping_credential_declarations(item) for item in obj]
+    return _expand_env_vars(obj)
 
 
 def resolve_custom_provider_connection(
@@ -4154,7 +4204,7 @@ def resolve_custom_provider_connection(
             return None, None, False
         return None, None
 
-    base_url = _custom_record_base_url(record)
+    base_url = _custom_record_endpoint(record)
     api_key = _resolve_custom_record_key(record.get("api_key"), _custom_record_key_env(record), pid)
     if return_provenance:
         return api_key, base_url, is_exact
@@ -4478,7 +4528,7 @@ def resolve_custom_provider_bundle(
     if record is None:
         return _unowned_custom_provider_bundle(pid, slug, status)
 
-    base_url = _custom_record_base_url(record)
+    base_url = _custom_record_endpoint(record)
     owned: dict = {}
 
     api_mode = _custom_record_api_mode(record)
