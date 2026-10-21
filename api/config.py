@@ -4557,6 +4557,10 @@ def resolve_custom_provider_bundle(
     # endpoint's credential AND its pool object come from the same lookup.
     api_key = None
     pool_runtime = _custom_record_pool_runtime(base_url, record)
+    # A pool that answered for this endpoint is a credential DECLARATION whether
+    # or not its answer is usable; remembered before the usability check so a
+    # rejected pool still keeps the route out of ``keyless``.
+    pool_declared = pool_runtime
     if pool_runtime and _is_unresolved_env_ref(pool_runtime.get("api_key")):
         # The installed pool builds its entries from the Agent's own config
         # read, so with the variable unset it can hand ``api_key: ${KEY}`` back
@@ -4600,7 +4604,7 @@ def resolve_custom_provider_bundle(
         # an endpoint only while this is True.
         "endpoint_owned": bool(base_url),
         "keyless": not api_key
-        and not _custom_record_declares_credential(record, base_url, pool_runtime),
+        and not _custom_record_declares_credential(record, base_url, pool_declared),
         "owned": owned,
     }
 

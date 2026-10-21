@@ -459,6 +459,42 @@ def test_pooled_literal_envref_is_unresolved_not_a_credential(
     assert verdict and verdict["reason"] == config.CUSTOM_ROUTE_NO_CREDENTIAL
 
 
+@pytest.mark.parametrize("shape", SHAPES)
+def test_pooled_literal_on_undeclared_record_is_not_keyless(
+    shape_profiles, monkeypatch, shape
+):
+    """A pool row can exist for an endpoint whose record declares no credential
+    field of its own. The pool answering is still a declaration: when its
+    answer is an unresolved literal the route is unresolved, never keyless."""
+    _write_record_shape(
+        shape_profiles.homes, shape, {"base_url": "http://127.0.0.1:8000/v1"}
+    )
+    pool = object()
+    monkeypatch.setattr(
+        config,
+        "_custom_record_pool_runtime",
+        lambda base_url, record: (
+            {"api_key": "${" + KEY + "}", "credential_pool": pool} if base_url else None
+        ),
+    )
+
+    payload = request_status(shape_profiles, "work")
+
+    assert payload["system"]["chat_ready"] is False
+    bundle = _bundle_in_profile("work")
+    assert bundle["api_key"] is None
+    assert bundle["keyless"] is False
+    assert "credential_pool" not in bundle["owned"]
+
+    merged = _chat_merge("work")
+    assert merged.get("api_key") not in (
+        "${" + KEY + "}",
+        config.KEYLESS_CUSTOM_API_KEY,
+    )
+    verdict = config.custom_provider_route_error(merged)
+    assert verdict and verdict["reason"] == config.CUSTOM_ROUTE_NO_CREDENTIAL
+
+
 KEY_CMD = "ONBOARDING_SCOPE_TEST_KEY_CMD"
 
 
