@@ -267,6 +267,47 @@ def _write_record_shape(homes, shape, record):
         (home / "config.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
 
 
+def _bundle_in_profile(profile):
+    """``resolve_custom_provider_bundle`` under the request profile's readonly scope."""
+    previous_profile = getattr(profiles._tls, "profile", None)
+    profiles.set_request_profile(profile)
+    try:
+        with profiles.profile_env_for_active_request_readonly():
+            return config.resolve_custom_provider_bundle(PROVIDER)
+    finally:
+        if previous_profile is None:
+            profiles.clear_request_profile()
+        else:
+            profiles.set_request_profile(previous_profile)
+
+
+@pytest.fixture
+def token_builder(monkeypatch):
+    """Stand-in for the Agent's ``key_cmd`` token source.
+
+    Records every command handed to the builder and returns a provider that
+    fails if anything ever invokes it: a status read or a routing decision must
+    build a provider for a literal ``key_cmd`` without executing it, and must
+    never hand an unresolved ``${CMD}`` to the builder at all.
+    """
+    calls = []
+    module = ModuleType("agent.command_token_source")
+
+    def build_command_token_provider(key_cmd, provider_label="custom"):
+        calls.append(key_cmd)
+        if not str(key_cmd or "").strip():
+            return None
+
+        def provider():
+            raise AssertionError("key_cmd must not run during status or routing")
+
+        return provider
+
+    module.build_command_token_provider = build_command_token_provider
+    monkeypatch.setitem(sys.modules, "agent.command_token_source", module)
+    return calls
+
+
 def _chat_merge(profile):
     """The streaming worker's connection seam, as chat would resolve it."""
     from api import streaming
@@ -301,16 +342,7 @@ def test_blank_envref_credential_is_unresolved_not_keyless(shape_profiles, shape
     )
     assert shape_profiles.keys == [None]
 
-    previous_profile = getattr(profiles._tls, "profile", None)
-    profiles.set_request_profile("work")
-    try:
-        with profiles.profile_env_for_active_request_readonly():
-            bundle = config.resolve_custom_provider_bundle(PROVIDER)
-    finally:
-        if previous_profile is None:
-            profiles.clear_request_profile()
-        else:
-            profiles.set_request_profile(previous_profile)
+    bundle = _bundle_in_profile("work")
     assert bundle["api_key"] is None
     assert bundle["keyless"] is False
 
@@ -374,6 +406,145 @@ def test_literal_record_still_routes_with_profile_key(shape_profiles, shape):
     assert config.custom_provider_route_error(merged) is None
     assert merged["api_key"] == "work-placeholder"
     assert merged["base_url"] == "http://127.0.0.1:8000/v1"
+
+
+@pytest.mark.parametrize("profile", ["work", "default"])
+@pytest.mark.parametrize("shape", SHAPES)
+def test_pooled_literal_envref_is_unresolved_not_a_credential(
+    shape_profiles, monkeypatch, shape, profile
+):
+    """The installed pool can hand ``api_key: ${KEY}`` back untouched when
+    ``KEY`` is unset. That literal is not a credential: the pool result and its
+    pool object are discarded, the declaration survives, and both status and
+    chat end with the unresolved-credential verdict."""
+    _write_record_shape(
+        shape_profiles.homes,
+        shape,
+        {"base_url": "http://127.0.0.1:8000/v1", "api_key": "${" + KEY + "}"},
+    )
+    pool = object()
+    consulted = []
+
+    def literal_pool(base_url, record):
+        consulted.append(base_url)
+        if not base_url:
+            return None
+        return {"api_key": "${" + KEY + "}", "credential_pool": pool}
+
+    monkeypatch.setattr(config, "_custom_record_pool_runtime", literal_pool)
+
+    payload = request_status(shape_profiles, profile)
+
+    assert payload["system"]["provider_ready"] is False
+    assert payload["system"]["chat_ready"] is False
+    assert (
+        payload["system"]["provider_note_key"]
+        == "onboarding_notice_provider_auth_required"
+    )
+    assert shape_profiles.keys == [None]
+    assert consulted, "the pool must be consulted and rejected, not bypassed"
+
+    bundle = _bundle_in_profile(profile)
+    assert bundle["api_key"] is None
+    assert bundle["keyless"] is False
+    assert "credential_pool" not in bundle["owned"]
+
+    merged = _chat_merge(profile)
+    assert merged.get("api_key") not in (
+        "${" + KEY + "}",
+        config.KEYLESS_CUSTOM_API_KEY,
+    )
+    assert merged.get("credential_pool") is not pool
+    verdict = config.custom_provider_route_error(merged)
+    assert verdict and verdict["reason"] == config.CUSTOM_ROUTE_NO_CREDENTIAL
+
+
+KEY_CMD = "ONBOARDING_SCOPE_TEST_KEY_CMD"
+
+
+@pytest.mark.parametrize("cmd_in", ["blank_in_profile", "unset"])
+@pytest.mark.parametrize("shape", SHAPES)
+def test_unresolved_key_cmd_envref_is_unresolved_not_keyless(
+    shape_profiles, monkeypatch, token_builder, shape, cmd_in
+):
+    """``key_cmd: ${CMD}`` that expands blank or stays unresolved is a declared
+    credential source with nothing behind it: not keyless, no placeholder, no
+    token provider, and the literal never reaches the Agent's command source."""
+    monkeypatch.delenv(KEY_CMD, raising=False)
+    _write_record_shape(
+        shape_profiles.homes,
+        shape,
+        {"base_url": "http://127.0.0.1:8000/v1", "key_cmd": "${" + KEY_CMD + "}"},
+    )
+    if cmd_in == "blank_in_profile":
+        (shape_profiles.homes["work"] / ".env").write_text(
+            f'{KEY_CMD}=" "\n', encoding="utf-8"
+        )
+
+    payload = request_status(shape_profiles, "work")
+
+    assert payload["system"]["provider_ready"] is False
+    assert payload["system"]["chat_ready"] is False
+    assert (
+        payload["system"]["provider_note_key"]
+        == "onboarding_notice_provider_auth_required"
+    )
+    assert shape_profiles.keys == [None]
+
+    bundle = _bundle_in_profile("work")
+    assert bundle["api_key"] is None
+    assert bundle["keyless"] is False
+
+    merged = _chat_merge("work")
+    assert not callable(merged.get("api_key"))
+    assert merged.get("api_key") != config.KEYLESS_CUSTOM_API_KEY
+    verdict = config.custom_provider_route_error(merged)
+    assert verdict and verdict["reason"] == config.CUSTOM_ROUTE_NO_CREDENTIAL
+    assert token_builder == []
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_literal_key_cmd_still_builds_a_token_provider(
+    shape_profiles, token_builder, shape
+):
+    """Control: a literal ``key_cmd`` is a usable credential source. Status and
+    routing build its per-request provider and never execute it."""
+    command = "print-token --provider local"
+    _write_record_shape(
+        shape_profiles.homes,
+        shape,
+        {"base_url": "http://127.0.0.1:8000/v1", "key_cmd": command},
+    )
+
+    payload = request_status(shape_profiles, "work")
+
+    assert payload["system"]["chat_ready"] is True
+    assert callable(shape_profiles.keys[0])
+
+    merged = _chat_merge("work")
+    assert config.custom_provider_route_error(merged) is None
+    assert callable(merged["api_key"])
+    assert token_builder and set(token_builder) == {command}
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_undeclared_credential_stays_keyless(shape_profiles, shape):
+    """Control: a record that declares no credential source at all is the only
+    thing that may be keyless, and chat then uses the placeholder."""
+    _write_record_shape(
+        shape_profiles.homes, shape, {"base_url": "http://127.0.0.1:8000/v1"}
+    )
+
+    payload = request_status(shape_profiles, "work")
+
+    assert payload["system"]["chat_ready"] is True
+    bundle = _bundle_in_profile("work")
+    assert bundle["api_key"] is None
+    assert bundle["keyless"] is True
+
+    merged = _chat_merge("work")
+    assert config.custom_provider_route_error(merged) is None
+    assert merged["api_key"] == config.KEYLESS_CUSTOM_API_KEY
 
 
 @pytest.mark.parametrize(

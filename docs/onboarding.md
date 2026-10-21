@@ -141,8 +141,10 @@ Credential references in `key_env`, `api_key_env`, or an `api_key: ${VAR}`
 environment reference resolve in the active profile across named `providers:`,
 `model:`, and legacy `custom_providers` records. A nonblank `key_env` takes
 precedence over `api_key_env`; an unresolved credential is not treated as
-keyless, including an `api_key: ${VAR}` whose variable is blank in the
-profile. A `base_url: ${VAR}` that does not resolve in the profile is not an
+keyless, including an `api_key: ${VAR}` or `key_cmd: ${VAR}` whose variable is
+blank or unset in the profile, or a pooled credential that still holds the
+unresolved reference; an unresolved `key_cmd` is never executed. A
+`base_url: ${VAR}` that does not resolve in the profile is not an
 endpoint: the status asks for a base URL and chat reports the missing endpoint
 instead of sending the literal reference.
 Onboarding status reads these references from the requested named profile's

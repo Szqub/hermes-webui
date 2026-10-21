@@ -3498,6 +3498,16 @@ def _custom_record_base_url(record: object) -> str | None:
 
 _UNRESOLVED_ENV_REF_RE = re.compile(r"\$\{[^}]+\}")
 
+# Record fields whose RAW text is a credential declaration. They are kept
+# unexpanded when expansion would blank them (see
+# :func:`_expand_keeping_credential_declarations`).
+_CUSTOM_CREDENTIAL_DECLARATION_FIELDS = ("api_key", "key_cmd")
+
+
+def _is_unresolved_env_ref(value: object) -> bool:
+    """True when ``value`` is text still holding a ``${VAR}`` reference."""
+    return isinstance(value, str) and bool(_UNRESOLVED_ENV_REF_RE.search(value))
+
 
 def _custom_record_endpoint(record: object) -> str | None:
     """A custom record's USABLE endpoint, or None.
@@ -4131,19 +4141,21 @@ def _custom_provider_selection_config() -> dict:
 def _expand_keeping_credential_declarations(obj):
     """:func:`_expand_env_vars` that never expands a credential DECLARATION away.
 
-    ``api_key: ${KEY}`` with ``KEY`` blank in the profile expands to whitespace,
-    which :func:`_custom_record_declares_credential` would read as "no credential
+    ``api_key: ${KEY}`` (or ``key_cmd: ${CMD}``) with the variable blank in the
+    profile expands to whitespace, which
+    :func:`_custom_record_declares_credential` would read as "no credential
     declared" — turning an unresolved credential into a keyless endpoint and the
-    placeholder key. A nonblank raw ``api_key`` that expands to blank keeps its
-    raw form, so the declaration survives and :func:`_resolve_custom_record_key`
-    still resolves it in scope to no key.
+    placeholder key. A nonblank raw declaration that expands to blank keeps its
+    raw form, so the declaration survives; :func:`_resolve_custom_record_key`
+    still resolves ``api_key`` in scope to no key, and
+    :func:`_custom_record_key_cmd_provider` refuses the unresolved ``key_cmd``.
     """
     if isinstance(obj, dict):
         out = {}
         for key, value in obj.items():
             expanded = _expand_keeping_credential_declarations(value)
             if (
-                key == "api_key"
+                key in _CUSTOM_CREDENTIAL_DECLARATION_FIELDS
                 and isinstance(value, str)
                 and value.strip()
                 and isinstance(expanded, str)
@@ -4349,7 +4361,12 @@ def _custom_record_key_cmd_provider(base_url: str | None, record: dict, pid: str
     never be handed :data:`KEYLESS_CUSTOM_API_KEY`.
     """
     key_cmd = str(record.get("key_cmd") or "").strip()
-    if not key_cmd:
+    if not key_cmd or _is_unresolved_env_ref(key_cmd):
+        # A ``${CMD}`` that did not resolve in this scope is a declared source
+        # with no command behind it. The Agent's command source hands the
+        # string to a shell at send time, so the literal must never become a
+        # provider: no provider here, and the declaration keeps the route
+        # unresolved rather than keyless.
         return None
     try:
         from agent.command_token_source import build_command_token_provider
@@ -4540,6 +4557,14 @@ def resolve_custom_provider_bundle(
     # endpoint's credential AND its pool object come from the same lookup.
     api_key = None
     pool_runtime = _custom_record_pool_runtime(base_url, record)
+    if pool_runtime and _is_unresolved_env_ref(pool_runtime.get("api_key")):
+        # The installed pool builds its entries from the Agent's own config
+        # read, so with the variable unset it can hand ``api_key: ${KEY}`` back
+        # untouched. That literal is not a credential and the pool object that
+        # carries it must not travel with the bundle: drop both and let the
+        # record's own declaration resolve (to nothing) below, so the route
+        # ends unresolved instead of sending ``${KEY}`` as a bearer.
+        pool_runtime = None
     if pool_runtime:
         api_key = pool_runtime.get("api_key") or None
         if pool_runtime.get("credential_pool") is not None:
